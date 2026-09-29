@@ -1,0 +1,47 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pathwise
+          POSTGRES_PASSWORD: pathwise
+          POSTGRES_DB: pathwise
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pathwise" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://pathwise:pathwise@localhost:5432/pathwise
+      JWT_SECRET: ci-secret-at-least-32-characters-long
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - name: Planning engine tests
+        run: npm run test -w @pathwise/core
+      - name: API walkthrough tests (real PostgreSQL)
+        run: npm run test -w @pathwise/api
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose up and check health
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do curl -fs http://localhost:8080/api/health && break; sleep 3; done
+          curl -fs http://localhost:8080/api/health
+          curl -fs -X POST http://localhost:8080/api/auth/login -H 'content-type: application/json' -d '{"email":"dispatcher@pathwise.lk","password":"PathWise@2026"}' | grep -q token
+      - if: always()
+        run: docker compose logs app | tail -50

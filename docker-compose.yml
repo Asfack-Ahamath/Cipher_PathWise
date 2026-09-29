@@ -1,0 +1,36 @@
+# docker compose up  →  database, migrations, seed data and the app on http://localhost:8080
+# Works with no .env file; copy .env.example to .env to change anything.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pathwise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pathwise}
+      POSTGRES_DB: ${POSTGRES_DB:-pathwise}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pathwise} -d ${POSTGRES_DB:-pathwise}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-pathwise}:${POSTGRES_PASSWORD:-pathwise}@db:5432/${POSTGRES_DB:-pathwise}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-at-least-32-chars}
+      SEED_ON_START: ${SEED_ON_START:-true}
+      DEMO_CLOCK_START: ${DEMO_CLOCK_START:-2026-04-30T02:30:00+05:30}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-PathWise@2026}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+volumes:
+  pgdata:

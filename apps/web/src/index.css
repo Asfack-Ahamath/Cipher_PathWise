@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+
+/* Pathwise design tokens */
+@theme inline {
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-teal-50: #f0fdfa;
+  --color-teal-100: #ccfbf1;
+  --color-teal-200: #99f6e4;
+  --color-teal-500: #14b8a6;
+  --color-teal-600: #0d9488;
+  --color-teal-700: #0f766e;
+  --color-teal-800: #115e59;
+  --color-teal-900: #134e4a;
+
+  --color-canvas: #F4F6FA;
+  --color-line: #E4E7EC;
+  --color-line-soft: #EEF0F3;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  background: #F4F6FA;
+  color: #0F172A;
+  font-size: 14px;
+}
+
+body { margin: 0; }
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* One visible focus style for keyboard users, everywhere */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #0F766E;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D5D9E0; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #AEB5C0; background-clip: content-box; }
+
+@keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+
+/* Leaflet */
+.leaflet-container { font-family: var(--font-sans); background: #EEF2F6; }
+.pw-pin { display:flex; align-items:center; justify-content:center; border-radius:9999px; color:#fff; font-weight:700; font-size:11px; border:2px solid #fff; box-shadow:0 2px 6px rgba(15,23,42,.35); }
+.safe-bottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
