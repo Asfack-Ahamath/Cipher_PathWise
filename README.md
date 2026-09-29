@@ -30,7 +30,7 @@ One responsive web app for four roles — Dispatcher, Loader, Driver and Store M
 ### With Docker (recommended)
 
 ```bash
-git clone https://github.com/<you>/Cipher_PathWise.git
+git clone https://github.com/Asfack-Ahamath/Cipher_PathWise.git
 cd Cipher_PathWise
 docker compose up --build
 ```
