@@ -7,9 +7,10 @@ One responsive web app for four roles — Dispatcher, Loader, Driver and Store M
 
 | | |
 |---|---|
-| Live demo | `https://<your-deployment>` — see [Deploy](#deploy) (replace this line with your URL) |
-| Demo video | `<link>` |
-| Docs | [Architecture](docs/architecture.md) · [Data model](docs/data-model.md) · [Planning engine](docs/planning-engine.md) · [When things go wrong](docs/degradation.md) · [API](docs/api.md) · [AI disclosure](docs/ai-disclosure.md) |
+| Live demo | [PathWise on Render](https://pathwise.onrender.com) — see [Deploy](#deploy) |
+| Documentation | [Architecture](docs/architecture.md) · [Data model](docs/data-model.md) · [Planning engine](docs/planning-engine.md) · [When things go wrong](docs/degradation.md) · [API](docs/api.md) · [AI disclosure](docs/ai-disclosure.md) |
+| License | [MIT](LICENSE) |
+| Contributing | [Guidelines](CONTRIBUTING.md) |
 
 ---
 
