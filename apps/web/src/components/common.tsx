@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, Info, Loader2, X } from 'lucide-react';
-import { api, ApiError } from '../lib/api';
+import { AlertTriangle, CheckCircle2, Download, ImageOff, Info, Loader2, X } from 'lucide-react';
+import { api, ApiError, download, fetchBlob } from '../lib/api';
 import { STATUS } from './StatusChip';
 import { cx } from './ds';
 
@@ -92,3 +92,55 @@ export function Status({ s, size = 'md' }: { s: string; size?: 'sm' | 'md' }) {
 
 export const fmt = (n: number | null | undefined, d = 0) => n == null ? '—' : Number(n).toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
 export const shortOutlet = (name?: string) => (name ?? '').replace(/^Waypoint (Fresh|Style|Tech) /, '').replace(/ · OUT\d+$/, '');
+
+/* ── Live-update indicator ── */
+export function LiveDot({ state }: { state: 'connecting' | 'live' | 'offline' }) {
+  const label = state === 'live' ? 'Live' : state === 'connecting' ? 'Connecting' : 'Reconnecting';
+  return (
+    <span title={state === 'live' ? 'Screens update as soon as something changes' : 'Live updates paused — screens still refresh every few seconds'}
+      className="hidden md:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[11px] font-semibold text-slate-600 bg-slate-100">
+      <span className={cx('w-1.5 h-1.5 rounded-full', state === 'live' ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,.2)]' : state === 'connecting' ? 'bg-amber-400' : 'bg-slate-400')} />{label}
+    </span>
+  );
+}
+
+/* ── Protected images (proof photos, signatures): fetched with the session token ── */
+export function AuthImage({ src, alt, className }: { src: string | null | undefined; alt: string; className?: string }) {
+  const [state, setState] = useState<{ url?: string; error?: string }>({});
+  useEffect(() => {
+    if (!src) return;
+    if (src.startsWith('data:')) { setState({ url: src }); return; }
+    let revoked: string | null = null, live = true;
+    setState({});
+    fetchBlob(src).then(f => { revoked = f.url; if (live) setState({ url: f.url }); }).catch(e => live && setState({ error: e.message }));
+    return () => { live = false; if (revoked) URL.revokeObjectURL(revoked); };
+  }, [src]);
+  if (!src) return null;
+  if (state.error) return <div className={cx('flex items-center justify-center gap-1.5 bg-slate-50 text-[12px] text-slate-500 rounded-lg', className)}><ImageOff size={14} />Photo unavailable</div>;
+  if (!state.url) return <div className={cx('flex items-center justify-center bg-slate-50 rounded-lg', className)}><Loader2 size={16} className="animate-spin text-slate-400" /></div>;
+  return <a href={state.url} target="_blank" rel="noreferrer"><img src={state.url} alt={alt} className={cx('object-cover rounded-lg', className)} /></a>;
+}
+
+/* ── File download with the session token (CSV exports) ── */
+export function DownloadButton({ path, name, children, className }: { path: string; name: string; children: ReactNode; className?: string }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  return (
+    <button type="button" disabled={busy} className={cx('inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-[13px] font-semibold text-slate-700 bg-white ring-1 ring-[#D0D5DD] hover:bg-slate-50 disabled:opacity-60', className)}
+      onClick={async () => { setBusy(true); try { await download(path, name); } catch (e: any) { toast('error', e.message); } finally { setBusy(false); } }}>
+      {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}{children}
+    </button>
+  );
+}
+
+/** Downscale a photo on the device before it is uploaded (keeps sync batches small on 3G). */
+export async function compressImage(file: File, maxSide = 1280, quality = 0.72): Promise<string> {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) && !file.type.startsWith('image/')) throw new Error('Choose a photo (JPEG, PNG or WebP).');
+  const bmp = await createImageBitmap(file).catch(() => null);
+  if (!bmp) throw new Error('That photo could not be read. Try another one.');
+  const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', quality);
+}

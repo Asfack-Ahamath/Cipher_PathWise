@@ -7,3 +7,7 @@ export * from './validate.js';
 export * from './planner.js';
 export * from './dataset.js';
 export * from './demoDay.js';
+export * from './datasetExtra.js';
+export * from './eta.js';
+export * from './forecast.js';
+export * from './peakDay.js';

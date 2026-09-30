@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { WifiOff, Wifi, CheckCircle2, Clock, Package, Camera, AlertTriangle, RefreshCw, Snowflake, Navigation, PenLine, Lock, Truck, Hourglass, CircleSlash, DoorClosed, Ban, ShieldAlert, MapPin, ChevronRight, ArrowRightLeft, Flag, CloudUpload, X, Phone } from 'lucide-react';
+import { WifiOff, Wifi, CheckCircle2, Clock, Package, Camera, AlertTriangle, RefreshCw, Snowflake, Navigation, PenLine, Lock, Truck, Hourglass, CircleSlash, DoorClosed, Ban, ShieldAlert, MapPin, ChevronRight, ArrowRightLeft, Flag, CloudUpload, X, Phone, Construction, Minus, Plus } from 'lucide-react';
 import { FieldHeader, BigButton } from '../../components/FieldShell';
 import { Callout, cx, inputCls } from '../../components/ds';
-import { ErrorState, Loading, useToast } from '../../components/common';
+import { compressImage, ErrorState, Loading, useToast } from '../../components/common';
+import { useLiveUpdates } from '../../lib/live';
 import { OutletBadges, TempTag } from '../../components/tags';
 import { api, ApiError } from '../../lib/api';
 import { hhmm, useNow } from '../../lib/clock';
 import { flush, hasSignal, loadRun, record, saveRun, setSimulatedOffline, useOutbox, type OutEvent } from '../../lib/outbox';
 
-type Screen = { k: 'run' } | { k: 'stop'; outletId: string } | { k: 'outcome'; outletId: string } | { k: 'pod'; outletId: string; outcome: string; recommendation?: string; note?: string } | { k: 'problem'; outletId?: string } | { k: 'summary' };
+type Screen = { k: 'run' } | { k: 'stop'; outletId: string } | { k: 'outcome'; outletId: string } | { k: 'pod'; outletId: string; outcome: string; recommendation?: string; note?: string; deliveredUnits?: Record<string, number> } | { k: 'problem'; outletId?: string } | { k: 'summary' };
 
 const OUTCOMES = [
   { id: 'full', label: 'Delivered in full', icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50 ring-emerald-200' },
@@ -50,6 +51,7 @@ export default function DriverApp() {
   const [answered, setAnswered] = useState<string | null>(null);
   const [syncReport, setSyncReport] = useState<{ applied: number; conflicts: any[]; rejected: any[] } | null>(null);
   const online = !box.simulated && box.online;
+  useLiveUpdates(online);
 
   // when signal returns: upload the outbox, then refresh the run and report what happened
   const wasOnline = useRef(online);
@@ -145,6 +147,14 @@ export default function DriverApp() {
               <>
                 <div className="px-4 pt-4 pb-2 flex items-center justify-between"><span className="text-[13px] font-semibold text-slate-700">{doneCount} of {stops.length} stops done</span><span className="text-[12px] text-slate-500 tabular">{hhmm(now)}</span></div>
                 <div className="px-4"><div className="h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-[#1D4ED8] rounded-full transition-all" style={{ width: `${stops.length ? doneCount / stops.length * 100 : 0}%` }} /></div></div>
+                {trip.routeChange && !pendingFor('route_ack') && (
+                  <div className="mx-4 mt-3 rounded-xl ring-1 ring-amber-300 bg-amber-50 p-4 text-[13px] text-amber-900" data-testid="route-change">
+                    <div className="font-bold flex items-center gap-2"><ArrowRightLeft size={16} />Your route changed at {hhmm(trip.routeChange.at)}</div>
+                    <ul className="mt-1.5 space-y-1">{trip.routeChange.moves.map((m: any, i: number) => <li key={i}>{m.direction === 'off' ? <><b>{m.outletId}</b> moved to another vehicle — skip it and keep its goods on board.</> : <><b>{m.outletId}</b> added to your trip.</>}{m.reason ? <span className="block text-[12px] text-amber-800">{m.reason}</span> : null}</li>)}</ul>
+                    <button onClick={() => act('route_ack', null, { changedAt: trip.routeChange.at }, 'Thanks — the dispatcher sees you have it')} className="mt-3 h-10 px-4 rounded-lg bg-amber-600 text-white text-[13px] font-bold">Got it</button>
+                  </div>
+                )}
+                {trip.hold && <div className="mx-4 mt-3 rounded-xl bg-slate-100 px-4 py-3 text-[13px] text-slate-700 flex items-start gap-2"><Construction size={16} className="text-slate-500 mt-0.5 flex-shrink-0" /><span>You reported <b>{trip.hold.label}</b> at {trip.hold.at} (~{trip.hold.minutes} min). Arrival times below include it; the stores were told.</span></div>}
                 {conflicts.length > 0 && <div className="mx-4 mt-3"><Callout tone="warning" title={`Check one stop: ${conflicts.map((c: any) => c.outletId).join(', ')}`}
                   action={alreadyAnswered ? <span className="text-[12px] font-semibold">Answer sent{answered ? `: ${answered}` : ''} · waiting for the dispatcher</span> : <div className="flex flex-wrap gap-2">{['Goods handed to the store', 'Goods still on my truck'].map(a => <button key={a} onClick={async () => { setAnswered(a); for (const c of conflicts) await act('conflict_answer', c.outletId, { answer: a }, 'Answer sent to the dispatcher'); }} className="h-9 px-3 rounded-lg bg-white ring-1 ring-amber-300 text-[12px] font-semibold text-amber-900">{a}</button>)}</div>}>
                   You recorded a delivery offline for a stop the dispatcher had moved to another vehicle. Your record and proof are kept. Where are the goods now?</Callout></div>}
@@ -161,7 +171,7 @@ export default function DriverApp() {
                           <span className={cx('w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold flex-shrink-0', st === 'synced' ? 'bg-emerald-600 text-white' : st === 'saved' ? 'bg-slate-500 text-white' : isCur ? 'bg-[#1D4ED8] text-white' : 'bg-slate-100 text-slate-700')}>{st === 'synced' ? <CheckCircle2 size={16} /> : st === 'saved' ? <Clock size={15} /> : s.seq}</span>
                           <span className="flex-1 min-w-0">
                             <span className="block text-[15px] font-bold text-slate-900 truncate">{s.outletId} · {s.outlet.district}</span>
-                            <span className="block text-[12px] text-slate-500">{st === 'synced' ? `${OUTCOME_LABEL[s.outcome.outcome] ?? 'Done'} · ${hhmm(s.outcome.at)}` : st === 'saved' ? 'Saved on phone · waiting to sync' : `ETA ${s.start} · window ${s.outlet.mallWindow ?? `${s.outlet.open}–${s.outlet.close}`}`}</span>
+                            <span className="block text-[12px] text-slate-500">{st === 'synced' ? `${OUTCOME_LABEL[s.outcome.outcome] ?? 'Done'} · ${hhmm(s.outcome.at)}` : st === 'saved' ? 'Saved on phone · waiting to sync' : <>ETA <b className={cx(s.late ? 'text-red-700' : s.lateRisk ? 'text-amber-700' : '')}>{s.expected ?? s.start}</b> · window {s.outlet.mallWindow ?? `${s.outlet.open}–${s.outlet.close}`}{s.late ? ' · after close — call the dispatcher' : ''}</>}</span>
                           </span>
                           {s.lines.some((l: any) => l.temp === 'chilled') && <Snowflake size={15} className="text-sky-600" />}
                           <ChevronRight size={16} className="text-slate-300" />
@@ -175,6 +185,7 @@ export default function DriverApp() {
                   {!current && !closed && <BigButton tone="driver" icon={<CheckCircle2 size={18} />} onClick={() => setScreen({ k: 'summary' })} data-testid="to-summary">All stops done · close trip</BigButton>}
                   {closed && <div className="rounded-xl bg-emerald-50 text-emerald-900 px-4 py-3 text-[14px] font-semibold flex items-center gap-2"><CheckCircle2 size={18} className="text-emerald-600" />Trip closed{trips[idx + 1] ? ` · Trip ${trips[idx + 1].trip} departs ${trips[idx + 1].depart}` : ''}</div>}
                   <BigButton tone="secondary" icon={<AlertTriangle size={17} />} onClick={() => setScreen({ k: 'problem' })}>Report a problem</BigButton>
+                  {current && !closed && <button onClick={() => setScreen({ k: 'summary' })} className="w-full py-2 text-[13px] font-semibold text-slate-500 hover:text-slate-800">End the trip early…</button>}
                 </div>
               </>
             )}
@@ -190,10 +201,12 @@ export default function DriverApp() {
                 <div className="text-[17px] font-bold text-slate-900">{s.outlet.name}</div>
                 <OutletBadges o={s.outlet} />
                 <div className="grid grid-cols-3 gap-2 pt-1 text-[12px]">
-                  <Info label="ETA" value={s.start} />
+                  <Info label="Expected" value={s.expected ?? s.start} warn={s.late || s.lateRisk} />
                   <Info label="Window" value={s.outlet.mallWindow ?? `${s.outlet.open}–${s.outlet.close}`} warn={s.lateRisk} />
                   <Info label="Unload" value={`${s.allowance} min`} />
                 </div>
+                {(s.expected ?? s.start) < (s.openAt ?? s.outlet.open) && <div className="text-[12px] text-sky-800 bg-sky-50 rounded-lg px-3 py-2">You will get there before the window opens at {s.openAt ?? s.outlet.open}. Wait nearby — do not unload early.</div>}
+                {s.late && <div className="text-[12px] text-red-800 bg-red-50 rounded-lg px-3 py-2">Expected after the store closes at {s.closeAt ?? s.outlet.close}. Tell the dispatcher — they may move this stop.</div>}
                 {s.outlet.vanOnly && <div className="text-[12px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2">Narrow street access — park on the main road if the lane is blocked.</div>}
                 {s.outlet.mallWindow && <div className="text-[12px] text-violet-800 bg-violet-50 rounded-lg px-3 py-2">Mall delivery bay only open {s.outlet.mallWindow}.</div>}
               </div>
@@ -219,26 +232,16 @@ export default function DriverApp() {
           );
         })()}
 
-        {screen.k === 'outcome' && <OutcomeScreen onNext={(outcome, recommendation, note) => setScreen({ k: 'pod', outletId: screen.outletId, outcome, recommendation, note })} />}
+        {screen.k === 'outcome' && <OutcomeScreen stop={stopOf(screen.outletId)} onNext={(outcome, recommendation, note, deliveredUnits) => setScreen({ k: 'pod', outletId: screen.outletId, outcome, recommendation, note, deliveredUnits })} />}
 
         {screen.k === 'pod' && <PodScreen outcome={screen.outcome} stop={stopOf(screen.outletId)} onSave={async p => {
-          await act('delivered', screen.outletId, { outcome: screen.outcome, recommendation: screen.recommendation, note: screen.note, ...p }, hasSignal() ? 'Sent · store asked to confirm receipt' : 'Saved on this phone — it will sync when you have signal');
+          await act('delivered', screen.outletId, { outcome: screen.outcome, recommendation: screen.recommendation, note: screen.note, ...(screen.deliveredUnits ? { deliveredUnits: screen.deliveredUnits } : {}), ...p }, hasSignal() ? 'Sent · store asked to confirm receipt' : 'Saved on this phone — it will sync when you have signal');
           setScreen({ k: 'run' });
         }} />}
 
-        {screen.k === 'problem' && <ProblemScreen onSend={async (kind, label, note) => { await act('problem', screen.outletId ?? null, { kind, label, note }, hasSignal() ? 'Sent to the dispatcher' : 'Saved — sends when you have signal'); setScreen({ k: 'run' }); }} />}
+        {screen.k === 'problem' && <ProblemScreen onSend={async (kind, label, note, delayMin) => { await act('problem', screen.outletId ?? null, { kind, label, note: note || undefined, ...(delayMin ? { delayMin } : {}) }, hasSignal() ? 'Sent to the dispatcher' : 'Saved — sends when you have signal'); setScreen({ k: 'run' }); }} />}
 
-        {screen.k === 'summary' && (
-          <div className="p-4 space-y-4">
-            <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
-              {stops.map(s => { const st = stopState(s); const o = s.outcome?.outcome ?? pendingFor('delivered', s.outletId)?.payload.outcome; return (
-                <div key={s.outletId} className="px-4 py-3 flex items-center justify-between text-[14px]"><span className="font-semibold">{s.seq}. {s.outletId}</span><span className={cx('text-[13px]', o === 'full' ? 'text-emerald-700' : o ? 'text-orange-700' : 'text-slate-400')}>{o ? OUTCOME_LABEL[o] : 'Not recorded'}{st === 'saved' ? ' · on phone' : ''}</span></div>
-              ); })}
-            </div>
-            {box.pending.length > 0 && <Callout tone="neutral" icon={<WifiOff size={15} className="text-slate-500" />} title={`${box.pending.length} records still on this phone`}>You can close the trip now; everything is sent together when you have signal.</Callout>}
-            <BigButton tone="driver" icon={<CheckCircle2 size={18} />} onClick={async () => { await act('trip_closed', null, {}, 'Trip closed'); setScreen({ k: 'run' }); }} data-testid="close-trip">Close trip</BigButton>
-          </div>
-        )}
+        {screen.k === 'summary' && <SummaryScreen stops={stops} stopState={stopState} pendingFor={pendingFor} pending={box.pending.length} onClose={async unrecorded => { await act('trip_closed', null, unrecorded.length ? { unrecorded } : {}, 'Trip closed'); setScreen({ k: 'run' }); }} />}
       </div>
       {online && box.pending.length > 0 && !box.syncing && (
         <div className="flex-shrink-0 p-3 border-t border-[#E4E7EC] bg-white safe-bottom"><BigButton tone="secondary" icon={<RefreshCw size={16} />} onClick={() => doSync(true)}>Send {box.pending.length} waiting records now</BigButton></div>
@@ -254,8 +257,12 @@ function Info({ label, value, warn }: { label: string; value: string; warn?: boo
   return <div className={cx('rounded-lg px-2.5 py-2', warn ? 'bg-amber-50' : 'bg-slate-50')}><div className="text-slate-500">{label}</div><div className={cx('font-bold tabular', warn ? 'text-amber-800' : 'text-slate-900')}>{value}</div></div>;
 }
 
-function OutcomeScreen({ onNext }: { onNext: (o: string, rec?: string, note?: string) => void }) {
+function OutcomeScreen({ stop, onNext }: { stop: any; onNext: (o: string, rec?: string, note?: string, deliveredUnits?: Record<string, number>) => void }) {
   const [o, setO] = useState<string | null>(null);
+  const lines: any[] = stop?.lines ?? [];
+  const onBoard = (l: any) => l.loadedUnits ?? l.units;
+  const [units, setUnits] = useState<Record<string, number>>(() => Object.fromEntries(lines.map(l => [l.orderId, onBoard(l)])));
+  const partialOk = o !== 'partial' || lines.some(l => units[l.orderId] < onBoard(l));
   const [rec, setRec] = useState<'return_to_depot' | 'retry_today'>('return_to_depot');
   const [note, setNote] = useState('');
   const failed = o && !['full', 'partial'].includes(o);
@@ -264,24 +271,30 @@ function OutcomeScreen({ onNext }: { onNext: (o: string, rec?: string, note?: st
       <div className="space-y-2" role="radiogroup">{OUTCOMES.map(x => (
         <button key={x.id} role="radio" aria-checked={o === x.id} onClick={() => setO(x.id)} data-testid={`outcome-${x.id}`} className={cx('w-full rounded-xl ring-1 px-4 min-h-[56px] flex items-center gap-3 text-[15px] font-semibold', o === x.id ? `${x.tone} ring-2` : 'ring-slate-200 text-slate-800 bg-white')}><x.icon size={19} />{x.label}</button>
       ))}</div>
-      {o === 'partial' && <textarea className={`${inputCls} h-auto py-2`} rows={2} placeholder="What was not handed over (optional)" value={note} onChange={e => setNote(e.target.value)} />}
+      {o === 'partial' && <div className="space-y-2">
+        <div className="text-[13px] font-semibold text-slate-700">How many did the store take?</div>
+        {lines.map(l => (
+          <div key={l.orderId} className="rounded-xl ring-1 ring-slate-200 px-3 py-2 flex items-center gap-3">
+            <div className="flex-1 min-w-0"><div className="text-[13px] font-semibold text-slate-900 truncate">{l.description}</div><div className="text-[12px] text-slate-500">{l.orderId} · {onBoard(l)} on board</div></div>
+            <button onClick={() => setUnits({ ...units, [l.orderId]: Math.max(0, units[l.orderId] - 1) })} className="w-10 h-10 rounded-lg ring-1 ring-slate-300 flex items-center justify-center" aria-label="One less"><Minus size={16} /></button>
+            <span className="w-10 text-center text-[16px] font-bold tabular">{units[l.orderId]}</span>
+            <button onClick={() => setUnits({ ...units, [l.orderId]: Math.min(onBoard(l), units[l.orderId] + 1) })} className="w-10 h-10 rounded-lg ring-1 ring-slate-300 flex items-center justify-center" aria-label="One more"><Plus size={16} /></button>
+          </div>
+        ))}
+        {!partialOk && <div className="text-[12px] text-amber-800">Lower at least one count, or choose "Delivered in full".</div>}
+        <textarea className={`${inputCls} h-auto py-2`} rows={2} placeholder="Why not everything (optional)" value={note} onChange={e => setNote(e.target.value)} />
+      </div>}
       {failed && <div className="space-y-2">
         <div className="text-[13px] font-semibold text-slate-700">What do you suggest?</div>
         <div className="grid grid-cols-2 gap-2">{[['return_to_depot', 'Bring it back · next run'], ['retry_today', 'Try again later today']].map(([k, l]) => <button key={k} onClick={() => setRec(k as any)} className={cx('min-h-[48px] rounded-xl ring-1 text-[13px] font-semibold px-2', rec === k ? 'ring-2 ring-[#1D4ED8] text-[#1D4ED8] bg-blue-50' : 'ring-slate-200 text-slate-700')}>{l}</button>)}</div>
         <textarea className={`${inputCls} h-auto py-2`} rows={2} placeholder="Note for the dispatcher (optional)" value={note} onChange={e => setNote(e.target.value)} />
       </div>}
-      <BigButton tone="driver" disabled={!o} onClick={() => o && onNext(o, failed ? rec : undefined, note || undefined)} data-testid="outcome-next">{o && failed ? 'Next: photo of the outlet' : 'Next: proof of delivery'}</BigButton>
+      <BigButton tone="driver" disabled={!o || !partialOk} onClick={() => o && onNext(o, failed ? rec : undefined, note || undefined, o === 'partial' ? units : undefined)} data-testid="outcome-next">{o && failed ? 'Next: photo of the outlet' : 'Next: proof of delivery'}</BigButton>
     </div>
   );
 }
 
-async function compress(file: File): Promise<string> {
-  const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
-  const s = Math.min(1, 800 / Math.max(img.width, img.height));
-  const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
-  c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', 0.6);
-}
+const compress = (f: File) => compressImage(f, 1024, 0.62);
 
 function PodScreen({ outcome, stop, onSave }: { outcome: string; stop: any; onSave: (p: { receiver?: string; photo?: string; signature?: string }) => Promise<void> }) {
   const [receiver, setReceiver] = useState('');
@@ -327,15 +340,53 @@ function PodScreen({ outcome, stop, onSave }: { outcome: string; stop: any; onSa
   );
 }
 
-function ProblemScreen({ onSend }: { onSend: (kind: string, label: string, note: string) => void }) {
+function ProblemScreen({ onSend }: { onSend: (kind: string, label: string, note: string, delayMin?: number) => void }) {
   const [k, setK] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [delay, setDelay] = useState<number | null>(null);
   const KINDS: [string, string, any][] = [['road', 'Road closed or blocked', Flag], ['traffic', 'Heavy traffic / delay', Clock], ['vehicle', 'Vehicle problem', Truck], ['reefer_alarm', 'Reefer temperature alarm', Snowflake], ['safety', 'Safety or security', ShieldAlert], ['call', 'Call me back', Phone]];
+  const delays = [15, 30, 60, 120, 180];
+  const withDelay = k && ['road', 'traffic', 'vehicle'].includes(k);
   return (
     <div className="p-4 space-y-3">
       <div className="grid grid-cols-2 gap-2">{KINDS.map(([id, label, I]) => <button key={id} onClick={() => setK(id)} className={cx('min-h-[76px] rounded-xl ring-1 px-3 py-2 flex flex-col items-start justify-center gap-1 text-left text-[13px] font-semibold', k === id ? 'ring-2 ring-[#1D4ED8] bg-blue-50 text-[#1D4ED8]' : 'ring-slate-200 text-slate-800')}><I size={18} />{label}</button>)}</div>
+      {withDelay && <div>
+        <div className="text-[13px] font-semibold text-slate-700 mb-1.5">How long will it hold you up?</div>
+        <div className="flex flex-wrap gap-2">{delays.map(m => <button key={m} onClick={() => setDelay(delay === m ? null : m)} className={cx('h-10 px-3 rounded-full ring-1 text-[13px] font-semibold', delay === m ? 'ring-2 ring-[#1D4ED8] bg-blue-50 text-[#1D4ED8]' : 'ring-slate-200 text-slate-700')}>{m < 60 ? `${m} min` : `${m / 60} h`}</button>)}<button onClick={() => setDelay(null)} className={cx('h-10 px-3 rounded-full ring-1 text-[13px] font-semibold', delay === null ? 'ring-2 ring-[#1D4ED8] bg-blue-50 text-[#1D4ED8]' : 'ring-slate-200 text-slate-700')}>Not sure</button></div>
+        <p className="mt-1.5 text-[12px] text-slate-500">Your remaining arrival times update, and stores are told if it is 30 minutes or more. The dispatcher decides whether a stop should move.</p>
+      </div>}
       <textarea className={`${inputCls} h-auto py-2`} rows={3} placeholder="What happened (optional)" value={note} onChange={e => setNote(e.target.value)} />
-      <BigButton tone="driver" disabled={!k} onClick={() => k && onSend(k, KINDS.find(x => x[0] === k)![1], note)}>Send to dispatcher</BigButton>
+      <BigButton tone="driver" disabled={!k} onClick={() => k && onSend(k, KINDS.find(x => x[0] === k)![1], note, withDelay ? delay ?? undefined : undefined)}>Send to dispatcher</BigButton>
+    </div>
+  );
+}
+
+/** Close the trip: every stop needs an outcome, or a reason it was not attempted. */
+function SummaryScreen({ stops, stopState, pendingFor, pending, onClose }: { stops: any[]; stopState: (s: any) => string; pendingFor: (t: string, o?: string) => any; pending: number; onClose: (unrecorded: { outletId: string; reason: string }[]) => Promise<void> }) {
+  const missing = stops.filter(s => !['synced', 'saved'].includes(stopState(s)));
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const REASONS = ['Ran out of time', 'Road closed', 'Vehicle problem', 'Dispatcher told me to skip it'];
+  const ok = missing.every(s => (reasons[s.outletId] ?? '').trim().length >= 3);
+  return (
+    <div className="p-4 space-y-4">
+      <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
+        {stops.map(s => { const st = stopState(s); const o = s.outcome?.outcome ?? pendingFor('delivered', s.outletId)?.payload.outcome; return (
+          <div key={s.outletId} className="px-4 py-3 flex items-center justify-between text-[14px]"><span className="font-semibold">{s.seq}. {s.outletId}</span><span className={cx('text-[13px]', o === 'full' ? 'text-emerald-700' : o ? 'text-orange-700' : 'text-red-700')}>{o ? OUTCOME_LABEL[o] : 'Not recorded'}{st === 'saved' ? ' · on phone' : ''}</span></div>
+        ); })}
+      </div>
+      {missing.length > 0 && <div className="space-y-3">
+        <Callout tone="warning" title={`${missing.length} stop${missing.length > 1 ? 's' : ''} without an outcome`}>Record the delivery, or say why you did not go. The dispatcher sees it and the store is told.</Callout>
+        {missing.map(s => (
+          <div key={s.outletId}>
+            <div className="text-[13px] font-semibold text-slate-700 mb-1.5">Why was {s.outletId} not attempted?</div>
+            <div className="flex flex-wrap gap-1.5 mb-1.5">{REASONS.map(r => <button key={r} onClick={() => setReasons({ ...reasons, [s.outletId]: r })} className={cx('h-9 px-3 rounded-full ring-1 text-[12px] font-semibold', reasons[s.outletId] === r ? 'ring-2 ring-[#1D4ED8] bg-blue-50 text-[#1D4ED8]' : 'ring-slate-200 text-slate-700')}>{r}</button>)}</div>
+            <input className={inputCls} value={reasons[s.outletId] ?? ''} onChange={e => setReasons({ ...reasons, [s.outletId]: e.target.value })} placeholder="Or type the reason" />
+          </div>
+        ))}
+      </div>}
+      {pending > 0 && <Callout tone="neutral" icon={<WifiOff size={15} className="text-slate-500" />} title={`${pending} records still on this phone`}>You can close the trip now; everything is sent together when you have signal.</Callout>}
+      <BigButton tone="driver" icon={<CheckCircle2 size={18} />} disabled={!ok || busy} onClick={async () => { setBusy(true); await onClose(missing.map(s => ({ outletId: s.outletId, reason: reasons[s.outletId].trim() }))); }} data-testid="close-trip">Close trip</BigButton>
     </div>
   );
 }

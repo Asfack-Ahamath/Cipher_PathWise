@@ -18,6 +18,10 @@ const appPort = process.env.PORT ?? '8080';
 
 const pg = new EmbeddedPostgres({ databaseDir: dataDir, user: 'pathwise', password: 'pathwise', port: pgPort, persistent: true, initdbFlags: ['--encoding=UTF8', '--locale=C', '--lc-messages=C'], onLog: () => {}, onError: m => process.env.PG_DEBUG && console.error(String(m)) });
 
+if (typeof process.getuid === 'function' && process.getuid() === 0) {
+  console.error('PostgreSQL refuses to run as root. Run "npm run local" as a normal user, or use "docker compose up".');
+  process.exit(1);
+}
 const firstRun = !fs.existsSync(path.join(dataDir, 'PG_VERSION'));
 if (firstRun) { console.log('› Setting up the local database in .pgdata (first run only)…'); await pg.initialise(); }
 console.log(`› Starting PostgreSQL on port ${pgPort}…`);

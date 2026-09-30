@@ -1,21 +1,25 @@
 # Datasets
 
-PathWise reads the five competition datasets from this folder at seed time:
+PathWise reads the competition datasets from this folder at seed time. Put the files here directly,
+or unzip the official pack so that `data/General Data/…` exists — both layouts work.
 
-| File | What it holds |
+| File | Used for |
 |---|---|
 | `outlets.csv` | 120 outlets: brand, district, depot, dock type, parking, receiving hours, mall window |
-| `vehicles.csv` | 60 vehicles: type, temperature, depot, weight and volume capacity, km/L, weekly fuel quota and use |
-| `district_travel.csv` | Outbound and inter-stop minutes and km per depot and district |
+| `vehicles.csv` | 60 vehicles: type, temperature, depot, weight and volume capacity, km/L, weekly fuel quota |
+| `district_travel.csv` | Free-flow outbound and inter-stop minutes and km per depot and district |
 | `service_allowance.csv` | Handling minutes by brand and dock type |
-| `calendar.csv` | Operating days, holidays, paydays, festival ramp, monsoon |
+| `calendar.csv` | Operating days, paydays, festivals and ramp, public holidays, monsoon, ISO weeks |
+| `traffic_speed.csv` | Speed index by district, hour and monsoon → expected arrival times |
+| `road_conditions.csv` | Date-specific disruption index by district → expected arrival times |
 
-Drop the official CSVs here (same file names) before `docker compose up` or `npm run db:seed`.
-The loader is tolerant of column order and common header spellings.
+Training and test data (`deliveries_train.csv`, `route_legs_*.csv`, `task1/2a/2b_*`) were used offline to
+derive the weekly demand history, the Task 2A forecast horizon and the Task 2B peak day; the compact results
+are generated into `packages/core/src/datasetExtra.ts` by `node scripts/bundle-datasets.mjs "<path to data>"`.
 
-If a file is missing, the seed falls back to the copy bundled in `packages/core/src/dataset.ts`
-(and a generated calendar for April–June 2026), so the app always starts.
+If a file is missing, the seed falls back to the rows bundled in `packages/core`, so the app always starts.
 
-**The CSVs are git-ignored on purpose.** The competition rules say the datasets must not be shared
-with third parties, so keep the repository private (add the judges as collaborators) or remove the
-bundled copy before making anything public.
+**Nothing in this folder is committed** (`.gitignore` excludes every CSV and zip under `data/`).
+The competition rules say the datasets must not be shared with any third party: keep the repository
+private and add only the judges. The bundled copies in `packages/core/src/dataset*.ts` are derived from the
+datasets too — remove them before making anything public.

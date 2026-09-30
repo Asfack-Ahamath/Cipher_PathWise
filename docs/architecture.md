@@ -18,12 +18,15 @@ flowchart LR
     A --> C
   end
 
-  DB[("PostgreSQL 16<br/>reference data · orders · plans<br/>trips · events · audit")]
+  DB[("PostgreSQL 16 / Supabase Postgres<br/>reference data · orders · plans<br/>trips · events · audit · RLS")]
+  SB["Supabase Auth + Storage<br/>(optional, server-side only)"]
 
   D & L & S -- "HTTPS /api (JWT)" --> A
   R -- "GET /api/driver/run<br/>POST /api/driver/sync (batched, idempotent)" --> A
   D & L & R & S -. "load app shell" .-> W
   A --> DB
+  A -. "AUTH_PROVIDER / STORAGE_PROVIDER = supabase" .-> SB
+  A -- "Server-Sent Events /api/events" --> D & L & S
   CSV["data/*.csv<br/>(competition datasets)"] -. "seed on first start" .-> A
 ```
 
@@ -32,7 +35,8 @@ flowchart LR
 | Planning engine | `packages/core` | Pure, dependency-free domain logic: trip time formula, validation of every rule, the auto-planner and its deferral explanations, the deterministic demo day. Unit-tested without a database. |
 | API | `apps/api` | Fastify 5 + `pg` (plain SQL, versioned migrations). Auth (JWT, bcrypt, dock PIN), role guards, business clock, plan drafts and publishing, loading, driver sync, exceptions and decisions, notifications, audit log. Serves the built web app in production. |
 | Web | `apps/web` | React 19 + Vite + Tailwind v4, TanStack Query, React Router, Leaflet. One app, four role areas (`/d`, `/l`, `/r`, `/s`). The driver area is offline-first (service worker + IndexedDB outbox). |
-| Database | PostgreSQL 16 | Reference data from the CSVs, operational data, append-only `stop_events` and `audit_log`. See [data-model.md](data-model.md). |
+| Database | PostgreSQL 16 or Supabase | Reference data from the CSVs, operational data, append-only `stop_events` and `audit_log`, row-level security on every table. See [data-model.md](data-model.md) and [supabase.md](supabase.md). |
+| Admin | `apps/web/src/pages/admin`, `apps/api/src/services/admin.ts` | People and access, fleet, outlets, planning rules and operating settings, data imports (Datathon forecast), audit log, system health. |
 
 ## Request flow for the core loop
 
@@ -78,8 +82,14 @@ sequenceDiagram
 
 **Notifications by audience.** A notification is addressed to `role:`, `depot:`, `outlet:`, `vehicle:` or `user:` and each user reads the union of their audiences. That keeps "tell the Kandy loaders" or "tell whoever drives VEH041" one insert, and it survives vehicle swaps.
 
+**Supabase behind the API.** Supabase provides the database, password checks (Auth) and photo storage, but the browser only talks to the PathWise API. The API keeps the business rules in one place, issues its own short sessions (so a Supabase outage does not sign anyone out), and holds the service-role key. Providers are switched with environment variables; `docker compose up` still runs a local PostgreSQL. See [supabase.md](supabase.md) and [security.md](security.md).
+
+**Live updates.** Every write is audited, and the audit action decides which screens are stale. Browsers keep a Server-Sent Events stream and refetch only those queries, so a dispatcher's decision reaches the dock tablet within a second; polling remains as the fallback.
+
+**Expected arrival times.** The plan uses the booklet's free-flow times. Live tracking, the driver's run and the store's ETA use *expected* times: each leg scaled by the traffic speed index for that district and hour (monsoon or not) and the day's road disruption, plus any hold the driver reported ("Road closed · 2 h"), plus actual delivery times so far. On the training data this halves the arrival-time error against free-flow (MAE 16.6 → 8.3 min).
+
 **Audit.** Every write (plan moves, publish, loading, flags, releases, decisions, deliveries, receipts, clock changes) goes to `audit_log` with who and when.
 
 ## Deployment
 
-One image (`Dockerfile`) builds the core, the API and the web app, and runs `node apps/api/dist/index.js`. On start it waits for PostgreSQL, applies migrations, seeds if the database is empty, and serves both `/api/*` and the web app. `docker-compose.yml` adds PostgreSQL 16 with a health check; `render.yaml` deploys the same image with a managed database.
+One image (`Dockerfile`) builds the core, the API and the web app, and runs `node apps/api/dist/index.js`. On start it checks its configuration, waits for the database, applies migrations, prepares the Supabase bucket if used, seeds if the database is empty, and serves both `/api/*` and the web app with security headers and rate limits. `docker-compose.yml` adds PostgreSQL 16 with a health check; `render.yaml` deploys the same image against a Supabase project.

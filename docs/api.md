@@ -1,74 +1,86 @@
 # API reference
 
-Base path `/api`. JSON in and out. Every route except `/health` and `/auth/login` needs `Authorization: Bearer <token>`. Role guards return `403` for the wrong role; rule violations return `409` with a message a person can act on; bad input returns `400` (validated with zod).
+Base path `/api`, JSON in and out. Send `Authorization: Bearer <token>` on every route except those marked *public*.
 
-## Auth and shared
+Errors: `{ "error": "sentence for a person", "code": "machine_code", "details": … }` —
+`400` bad input (zod; `details` lists fields) · `401` not signed in / session ended (`session_expired`, `session_revoked`, `account_disabled`) ·
+`403` wrong role or `password_change_required` · `404` · `409` business rule (e.g. `TRIP_CLAIMED`) · `423` locked account · `429` rate limited · `502/503` Supabase unreachable.
 
+## Auth
 | Method | Path | Who | What |
 |---|---|---|---|
-| GET | `/health` | anyone | DB check and the business clock |
-| POST | `/auth/login` | anyone | `{email, password}` or `{pin, depot}` (loader dock tablet) → `{token, user}` |
-| GET | `/me` | any role | The signed-in user |
-| GET | `/clock` | any role | Business time and the active delivery day |
-| PUT | `/clock` | dispatcher | `{at}` — move the demo clock |
-| GET | `/reference` | any role | Outlets, vehicles, rules, reason codes, calendar, depots |
-| GET | `/notifications` | any role | Notifications for the user's audiences, with read state |
-| POST | `/notifications/read` | any role | `{ids?}` — mark read (all when empty) |
+| GET | `/auth/config` | public | `{demoMode, passwordRecovery}` for the sign-in page |
+| POST | `/auth/login` | public | `{email, password}` → `{token, user, expiresInHours}` |
+| POST | `/auth/pin` | public | `{pin, depot}` loader dock tablet |
+| POST | `/auth/forgot` | public | `{email}` — sends a reset link (Supabase) or explains to ask the admin |
+| POST | `/auth/recover` | public | `{accessToken, password}` from the emailed link → signed in |
+| POST | `/auth/logout` | any | `{everywhere?}` |
+| GET | `/me` | any | the signed-in user |
+| POST | `/me/password` | any | `{current, next}` → new token (other sessions end) |
+| POST | `/events/ticket` | any | 60-s ticket for `GET /events?ticket=` (Server-Sent Events: `{topics:[…]}`) |
 
-## Dispatcher
+## Shared
+| Method | Path | Who | What |
+|---|---|---|---|
+| GET | `/health` | public | `{ok}` |
+| GET | `/clock` | any | business time, delivery day, demo mode |
+| PUT | `/clock` | dispatcher | `{at}` move the demo clock (demo mode) |
+| POST | `/demo/reset` | dispatcher | reload the demo day (demo mode) |
+| GET | `/reference` | any | outlets, vehicles, rules, operations settings, reason codes, calendar, depots |
+| GET | `/notifications` · POST `/notifications/read` | any | inbox for the user's audiences |
+| GET | `/files/:id` | any (checked) | proof photo / signature (bytes, or 302 to a signed Supabase URL) |
 
+## Dispatcher (admins too)
 | Method | Path | What |
 |---|---|---|
-| GET | `/overview` | Day summary: orders by brand, planned/deferred (forced/chosen), fleet, reefer capacity, vehicles closest to a limit, open exceptions |
-| GET | `/orders?date=` | Orders for the day with placement or deferral, plus after-cutoff orders |
-| POST | `/orders/phone` | `{outletId, temp, lines[]}` — record a phone order |
-| GET | `/plans/:date` | Plan view: draft or live trips with schedule, usage per vehicle, issues, unassigned orders with proposed deferrals |
-| POST | `/plans/:date/auto` | Run the planning engine into the draft (released/running trips locked) |
-| POST | `/plans/:date/move` | `{orderId, target: {vehicleId, trip} \| null, reason?}` — move or defer one order in the draft; response includes re-validated issues |
-| DELETE | `/plans/:date/draft` | Discard the draft |
-| POST | `/plans/:date/publish` | Validate and publish; `409` with the broken rules if any; notifies loaders, drivers and stores |
-| GET | `/deferrals?date=` | Today's deferrals, history, outlets protected by repeat-skip |
-| GET | `/tracking` | Every trip with progress, last contact, position / estimate, conflicts, late risk |
-| GET | `/trips/:id` | Trip detail (stops, lines, events, moved stops, exceptions) |
-| GET | `/trips/:id/move-options?outletId=` | Every vehicle/trip a stop could move to now, with ETA and the first rule it would break |
-| POST | `/trips/:id/move-stop` | `{outletId, toVehicleId, toTrip?, reason}` — move a stop on a live plan |
-| GET | `/exceptions` | Open and today's resolved exceptions |
-| POST | `/exceptions/:id/resolve` | `{decision, note?, vehicleId?}` — see decisions below |
-| GET | `/forecast` | Weekly chilled demand vs usable reefer capacity |
-| PATCH | `/vehicles/:id` | `{status: available \| in_workshop}` |
-| POST | `/demo/reset` | Reset the demo day (orders, plans, trips, events) and the clock |
-
-Exception decisions: `dock_shortfall` → `send_partial` · `substitute` · `hold`; `vehicle_fault` → `swap` (+`vehicleId`) · `continue`; `non_delivery` → `return_to_depot` · `retry_today`; `sync_conflict` → `keep_driver` · `keep_reassignment`; `receipt_issue` → `redeliver` · `credit`; `road_problem` → `acknowledge`.
+| GET | `/overview` | day summary, attention list, capacity |
+| GET | `/orders?date=` · GET `/orders.csv?date=` | order queue, after-cutoff, cancelled · CSV export |
+| POST | `/orders/phone` | `{outletId, temp, lines[]}` phone order |
+| PATCH | `/orders/:id` · POST `/orders/:id/cancel` | change quantities · cancel `{reason}` (confirmed, not yet on a trip) |
+| GET | `/plans/:date` · `/plans/:date/versions` | plan board · every version with stats and changes |
+| POST | `/plans/:date/auto` · `/move` · `/publish` · DELETE `/plans/:date/draft` | auto-plan · manual move `{orderId, target, reason?}` · publish · discard |
+| GET | `/trips/:id` | trip detail (also loaders of the depot and the trip's driver) |
+| GET | `/trips/:id/move-options?outletId=` | `{keep, why, recommendMove, options[]}` — keep-it row with live ETA first |
+| POST | `/trips/:id/move-stop` | `{outletId, to:{vehicleId, trip?}, reason}` |
+| GET | `/tracking` · `/deferrals` · `/exceptions` | live trips with expected ETAs and holds · deferrals · exceptions |
+| POST | `/exceptions/:id/resolve` | `{decision, note?, vehicleId?}` |
+| GET | `/forecast` · `/peak-day` · `/peak-day.csv` | weekly demand vs capacity · Task 2B S1 allocation + feasibility · submission CSV |
+| PATCH | `/vehicles/:id` | `{status, note}` take a vehicle in/out of service |
 
 ## Loader
-
 | Method | Path | What |
 |---|---|---|
-| GET | `/loader/queue` | Trips loading at the user's depot, by departure, with progress |
-| GET | `/loader/trips/:id` | Load list (stops and lines) |
-| POST | `/loader/trips/:id/ack` | Acknowledge a plan change |
-| POST | `/loader/trips/:id/lines/:orderId` | `{state: loaded \| pending}` |
-| POST | `/loader/trips/:id/lines/:orderId/flag` | `{reason: missing \| damaged \| wrong_item, loadedUnits, item?, note?}` → dock_shortfall exception |
-| POST | `/loader/trips/:id/release` | `409` until every line is done, decisions are made and changes acknowledged |
-| POST | `/loader/trips/:id/fault` | `{type, severity: blocking \| advisory, note?}` → vehicle_fault exception |
+| GET | `/loader/queue` · `/loader/trips/:id` | dock queue for the depot · load list |
+| POST / DELETE | `/loader/trips/:id/claim` | claim the trip for this tablet `{device, takeOver?}` · give it back |
+| POST | `/loader/trips/:id/lines/:orderId` | `{state: loaded|pending}` |
+| POST | `/loader/trips/:id/lines/:orderId/flag` | shortfall `{reason, loadedUnits, item?, note?}` |
+| POST | `/loader/trips/:id/lines/:orderId/size` | real size `{actualKg, actualM3, note?}` |
+| POST | `/loader/trips/:id/ack` · `/release` · `/fault` | acknowledge a plan change · release · vehicle fault |
 
 ## Driver
-
 | Method | Path | What |
 |---|---|---|
-| GET | `/driver/run` | Today's trips for the driver's vehicle (cached on the phone) |
-| POST | `/driver/sync` | `{events: [{clientEventId (uuid), type, tripId, outletId?, deviceTime, payload}]}` → per-event `applied` · `duplicate` · `conflict` · `rejected` |
-
-Event types: `trip_started`, `arrived`, `delivered` (payload: `outcome` full · partial · refused · no_access · closed, `receiver`, `photo`, `signature`, `recommendation`, `note`), `problem` (`kind`, `label`, `note`), `conflict_answer` (`answer`), `trip_closed`.
+| GET | `/driver/run` | today's trips with expected ETAs, hold, route changes (cached on the phone) |
+| POST | `/driver/sync` | `{events:[{clientEventId, type, tripId, outletId?, deviceTime, payload}]}` — idempotent; types `trip_started`, `arrived`, `delivered`, `problem` (`delayMin`), `trip_closed` (`unrecorded[]`), `conflict_answer`, `route_ack` |
 
 ## Store manager
-
 | Method | Path | What |
 |---|---|---|
-| GET | `/store/overview` | Today's orders, delivery ETA (estimated when the driver is offline), deferral notices, lines to confirm, order window |
-| GET | `/store/order-window` | Next delivery day, 16:00 cutoff, skipped holidays, calendar flags |
-| POST | `/store/orders` | `{temp, lines: [{category, units}], note?}` |
-| POST | `/store/deferrals/:id/ack` | Mark a deferral notice read |
-| POST | `/store/receipts` | `{orderId, lines: [{orderId, status: ok \| short \| damaged \| temperature, received, expected}], note?}` |
-| GET | `/store/history` | Last 30 days of orders with deferrals and receipts |
-| GET | `/store/pod/:orderId` | The driver's proof of delivery (receiver, photo, signature) |
+| GET | `/store/overview` · `/store/order-window` | deliveries with ETAs, orders, notices, to confirm, upcoming |
+| POST | `/store/orders` | `{temp, lines[], note?}` |
+| PATCH / DELETE | `/store/orders/:id` | change quantities · cancel `{reason}` (until the cutoff) |
+| POST | `/store/deferrals/:id/ack` | read a notice |
+| POST | `/store/receipts` | `{orderId, lines[], note?, photos?[]}` |
+| GET | `/store/history?temp=&status=&days=` · `/store/pod/:orderId` | history · driver's proof |
+
+## Administrator
+| Method | Path | What |
+|---|---|---|
+| GET / POST | `/admin/users` | list (`q`, `role`, `active`) · create (temporary password returned once) |
+| PATCH | `/admin/users/:id` | name, role, scope, phone, active |
+| POST | `/admin/users/:id/reset-password` · `/reset-pin` · `/unlock` · `/sign-out` | account actions |
+| GET / PATCH | `/admin/vehicles` · `/admin/vehicles/:id` | fleet |
+| GET / PATCH | `/admin/outlets` · `/admin/outlets/:id` | outlets, windows, access, active |
+| GET / PUT | `/admin/settings` · `/admin/settings/:key` | `rules` or `operations` |
+| GET | `/admin/data` · POST / DELETE `/admin/data/forecast` | data status · import / remove the Task 2A forecast `{csv}` |
+| GET | `/admin/audit?action=&entity=&before=&limit=` · `/admin/system` | audit log (paged) · health |

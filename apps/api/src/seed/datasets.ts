@@ -26,7 +26,8 @@ export function parseCsv(text: string): Record<string, string>[] {
 const pick = (r: Record<string, string>, ...names: string[]) => { for (const n of names) if (r[n] !== undefined && r[n] !== '') return r[n]; return undefined; };
 const truthy = (v?: string) => !!v && /^(1|true|yes|y)$/i.test(v);
 const hhmm = (v?: string) => { if (!v) return v; const m = v.match(/(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : v; };
-const read = (dir: string, f: string) => { const p = path.join(dir, f); return fs.existsSync(p) ? parseCsv(fs.readFileSync(p, 'utf8')) : null; };
+export const readCsv = (dir: string, f: string) => { for (const sub of ['', 'General Data']) { const p = path.join(dir, sub, f); if (fs.existsSync(p)) return parseCsv(fs.readFileSync(p, 'utf8')); } return null; };
+const read = (dir: string, f: string) => readCsv(dir, f);
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
 export interface OutletRow { id: string; name: string; brand: Brand; district: string; depot: Depot; dock: Dock; parking: string; open: string; close: string; mallWindow: string | null; vanOnly: boolean; lat: number; lng: number }
@@ -67,8 +68,8 @@ export function loadDatasets(dir: string, log = console.log) {
         id: pick(r, 'vehicle_id', 'id')!, type: type.includes('van') ? 'van' : 'truck',
         temp: /reefer|refrig|chill|true|^1$|yes/.test(tempRaw) || type.includes('reefer') ? 'reefer' : 'ambient',
         depot: cap(pick(r, 'home_depot', 'depot')!) as Depot,
-        weightCap: Number(pick(r, 'weight_limit_kg', 'capacity_kg', 'max_weight_kg', 'weight_cap')),
-        volumeCap: Number(pick(r, 'volume_limit_m3', 'capacity_m3', 'max_volume_m3', 'volume_cap')),
+        weightCap: Number(pick(r, 'weight_cap_kg', 'weight_limit_kg', 'capacity_kg', 'max_weight_kg', 'weight_cap')),
+        volumeCap: Number(pick(r, 'volume_cap_m3', 'volume_limit_m3', 'capacity_m3', 'max_volume_m3', 'volume_cap')),
         kmPerL: Number(pick(r, 'km_per_litre', 'km_per_l', 'fuel_efficiency_kmpl', 'kmpl')),
         fuelQuotaL: Number(pick(r, 'weekly_fuel_quota_l', 'fuel_quota_l', 'weekly_fuel_quota', 'fuel_quota')),
       };
@@ -82,7 +83,7 @@ export function loadDatasets(dir: string, log = console.log) {
     src.travel = 'district_travel.csv';
     travel = tc.map(r => ({
       depot: cap(pick(r, 'depot', 'from_depot')!) as Depot, district: pick(r, 'district', 'to_district')!,
-      outMin: Number(pick(r, 'outbound_min', 'out_min', 'depot_to_district_min')), interMin: Number(pick(r, 'inter_stop_min', 'inter_min')),
+      outMin: Number(pick(r, 'depot_to_district_freeflow_min', 'outbound_min', 'out_min', 'depot_to_district_min')), interMin: Number(pick(r, 'inter_stop_freeflow_min', 'inter_stop_min', 'inter_min')),
       outKm: Number(pick(r, 'outbound_km', 'out_km', 'depot_to_district_km')), interKm: Number(pick(r, 'inter_stop_km', 'inter_km')), roadClass: pick(r, 'road_class') ?? 'suburban',
     }));
   }
@@ -91,28 +92,13 @@ export function loadDatasets(dir: string, log = console.log) {
   if (ac) {
     src.allowance = 'service_allowance.csv';
     const a: any = { Fresh: {}, Style: {}, Tech: {} };
-    for (const r of ac) a[cap(pick(r, 'brand')!)][(pick(r, 'dock_type', 'dock')!).toLowerCase()] = Number(pick(r, 'allowance_min', 'service_min', 'minutes'));
+    for (const r of ac) a[cap(pick(r, 'brand')!)][(pick(r, 'dock_type', 'dock')!).toLowerCase()] = Number(pick(r, 'service_allowance_min', 'allowance_min', 'service_min', 'minutes'));
     allowance = a;
   }
-  const cc = read(dir, 'calendar.csv');
-  const calendar = cc ? (src.calendar = 'calendar.csv', cc.map(r => ({
-    date: pick(r, 'date')!, isOperating: pick(r, 'is_operating_day', 'operating_day', 'is_operating') ? truthy(pick(r, 'is_operating_day', 'operating_day', 'is_operating')) : new Date(pick(r, 'date')! + 'T12:00:00Z').getUTCDay() !== 0,
-    isPayday: truthy(pick(r, 'is_payday', 'payday')), holiday: pick(r, 'holiday_name', 'holiday', 'festival_name') ?? null,
-    festivalRamp: Number(pick(r, 'festival_ramp') ?? 0), monsoon: truthy(pick(r, 'monsoon', 'is_monsoon')),
-  }))) : defaultCalendar();
+  const bad = [...vehicles.filter(v => ![v.weightCap, v.volumeCap, v.kmPerL, v.fuelQuotaL].every(Number.isFinite)).map(v => v.id), ...travel.filter(t => ![t.outMin, t.interMin, t.outKm, t.interKm].every(Number.isFinite)).map(t => t.district)];
+  if (bad.length) throw new Error(`Dataset columns not recognised (missing numbers for ${bad.slice(0, 5).join(', ')}). Check the CSV headers in ${dir}.`);
+  if (readCsv(dir, 'calendar.csv')) src.calendar = 'calendar.csv';
   log(`datasets: ${Object.keys(src).length ? Object.entries(src).map(([k, v]) => `${k} ← ${v}`).join(', ') : 'bundled rows (no CSV files in ' + dir + ')'}`);
-  return { outlets, vehicles, travel, allowance, calendar };
+  return { outlets, vehicles, travel, allowance };
 }
 
-/* Used only when calendar.csv is not supplied: Sundays and poya/public holidays are not operating days. */
-export function defaultCalendar() {
-  const out: { date: string; isOperating: boolean; isPayday: boolean; holiday: string | null; festivalRamp: number; monsoon: boolean }[] = [];
-  const holidays: Record<string, string> = { '2026-04-13': 'Sinhala & Tamil New Year Eve', '2026-04-14': 'Sinhala & Tamil New Year', '2026-05-01': 'Vesak Full Moon Poya', '2026-05-30': 'Poson Full Moon Poya', '2026-06-29': 'Esala Full Moon Poya' };
-  const paydays = new Set(['2026-04-30', '2026-05-25', '2026-05-30', '2026-06-25', '2026-06-30']);
-  const ramp: Record<string, number> = { '2026-04-28': 0.4, '2026-04-29': 0.7, '2026-04-30': 0.9, '2026-05-28': 0.5, '2026-05-29': 0.8 };
-  for (let d = new Date('2026-04-01T12:00:00Z'); d <= new Date('2026-06-30T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
-    const iso = d.toISOString().slice(0, 10);
-    out.push({ date: iso, isOperating: d.getUTCDay() !== 0 && !holidays[iso], isPayday: paydays.has(iso), holiday: holidays[iso] ?? null, festivalRamp: ramp[iso] ?? 0, monsoon: iso >= '2026-04-27' });
-  }
-  return out;
-}

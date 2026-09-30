@@ -1,15 +1,22 @@
 import bcrypt from 'bcryptjs';
-import { DEMO_DAY, generateDemoOrders, SKIPPED_YESTERDAY, type Outlet } from '@pathwise/core';
+import { CALENDAR_ROWS, DEMO_DAY, generateDemoOrders, ROAD_DISRUPTION, SKIPPED_YESTERDAY, TRAFFIC_SPEED, WEEKLY_DEMAND, type Outlet } from '@pathwise/core';
 import { config } from '../config.js';
 import { one, q, tx, type Db } from '../db.js';
 import { setClock } from '../clock.js';
-import { loadDatasets } from './datasets.js';
+import { sbEnsureUser } from '../lib/supabase.js';
+import { invalidateSettings } from '../lib/settings.js';
+import { invalidateConditions } from '../services/network.js';
+import { loadDatasets, readCsv } from './datasets.js';
 
 /* Assumed for the demo (the datasets do not include them): which vehicles are in the
    workshop, fuel already used this week, and drivers' names. */
 const WORKSHOP: Record<string, string> = { VEH004: 'Brake service', VEH017: 'Gearbox repair', VEH025: 'Annual inspection', VEH058: 'Reefer unit repair' };
 const FUEL_USED: Record<string, number> = { VEH002: 402, VEH035: 188, VEH012: 535.5, VEH009: 287, VEH041: 244, VEH057: 205, VEH039: 251, VEH047: 318, VEH042: 212 };
 const DRIVERS = ['Lahiru Silva', 'Amila Dias', 'Pradeep Kumara', 'Sampath Fernando', 'Malith Wickrama', 'Chaminda Silva', 'Dinesh Kumara', 'Nuwan Rathnayake', 'Kamal Jayawardena', 'Saman Kumara', 'Ruwan Bandara', 'Chathura Perera', 'Isuru Herath', 'Tharindu Silva', 'Janaka Wijesinghe', 'Buddhika Rajapaksha', 'Mahesh Gunasekara', 'Asitha Fernando', 'Gayan Madushanka', 'Dilan Jayasuriya'];
+
+/** The first administrator. Set ADMIN_EMAIL / ADMIN_PASSWORD before the first start; otherwise the demo
+ *  password is used and (outside demo mode) must be changed at first sign-in. */
+export const ADMIN_USER = { email: config.adminEmail, name: 'PathWise Administrator', role: 'admin', depot: null, outlet: null, vehicle: null, pin: null } as const;
 
 export const DEMO_USERS = [
   { email: 'dispatcher@pathwise.lk', name: 'Nimal Perera', role: 'dispatcher', depot: null, outlet: null, vehicle: null, pin: null },
@@ -23,10 +30,46 @@ export const DEMO_USERS = [
   { email: 'store.tech@pathwise.lk', name: 'Asanka Senanayake', role: 'store_manager', depot: null, outlet: 'OUT024', vehicle: null, pin: null },
 ] as const;
 
-const isoWeek = (date: string) => {
-  const d = new Date(date + 'T12:00:00Z'); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day + 3);
-  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4)); return `W${String(1 + Math.round(((d.getTime() - firstThu.getTime()) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7)).padStart(2, '0')}`;
-};
+/** Insert many rows with one statement per chunk (reference tables have thousands of rows). */
+async function bulk(db: Db, table: string, cols: string[], rows: unknown[][], conflict = 'ON CONFLICT DO NOTHING') {
+  for (let i = 0; i < rows.length; i += 500) {
+    const chunk = rows.slice(i, i + 500);
+    const params: unknown[] = [];
+    const values = chunk.map(r => `(${r.map(v => { params.push(v); return `$${params.length}`; }).join(',')})`).join(',');
+    await q(`INSERT INTO ${table} (${cols.join(',')}) VALUES ${values} ${conflict}`, params, db);
+  }
+}
+const HOLIDAY_NAMES: Record<string, string> = { vesak: 'Vesak Full Moon Poya', poson: 'Poson Full Moon Poya', esala: 'Esala Full Moon Poya', new_year: 'Sinhala & Tamil New Year', thai_pongal: 'Thai Pongal', deepavali: 'Deepavali', christmas: 'Christmas' };
+const nice = (f: string) => HOLIDAY_NAMES[f] ?? f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+/** calendar.csv (or the bundled copy): operating days, paydays, festivals, monsoon, ISO weeks. */
+export function calendarRows(dir: string) {
+  const csv = readCsv(dir, 'calendar.csv');
+  const rows = csv
+    ? csv.map(r => [r.date, Number(r.is_operating ?? 1), Number(r.is_payday ?? 0), r.festival ?? '', Number(r.festival_ramp ?? 0), Number(r.is_holiday ?? 0), Number(r.monsoon ?? 0), Number(r.iso_year), Number(r.iso_week)] as const)
+    : CALENDAR_ROWS;
+  return rows.map(([date, op, pay, fest, ramp, hol, mon, y, w]) => ({
+    date, isOperating: !!op, isPayday: !!pay, festival: fest || null, festivalRamp: ramp, isHoliday: !!hol, monsoon: !!mon, isoYear: y, isoWeek: w,
+    holiday: hol ? (fest ? nice(fest) : 'Public holiday') : null, dow: (new Date(date + 'T12:00:00Z').getUTCDay() + 6) % 7,
+  }));
+}
+
+/** traffic_speed.csv, road_conditions.csv and weekly demand history. */
+export async function seedConditions(db: Db, log = console.log) {
+  const dir = config.dataDir;
+  const tc = readCsv(dir, 'traffic_speed.csv');
+  const traffic = tc ? tc.map(r => [r.district, Number(r.hour), r.monsoon === '1' || r.monsoon === 'true', Number(r.speed_index)])
+    : Object.entries(TRAFFIC_SPEED).map(([k, v]) => { const [d, h, m] = k.split('|'); return [d, Number(h), m === '1', v]; });
+  await bulk(db, 'traffic_speed', ['district', 'hour', 'monsoon', 'speed_index'], traffic, 'ON CONFLICT (district, hour, monsoon) DO UPDATE SET speed_index = EXCLUDED.speed_index');
+  const rc = readCsv(dir, 'road_conditions.csv');
+  const roads = rc ? rc.map(r => [r.district, r.date, Number(r.disruption_index)])
+    : Object.entries(ROAD_DISRUPTION).map(([k, v]) => { const [d, date] = k.split('|'); return [d, date, v]; });
+  await bulk(db, 'road_conditions', ['district', 'date', 'disruption_index'], roads, 'ON CONFLICT (district, date) DO UPDATE SET disruption_index = EXCLUDED.disruption_index');
+  const weekly = WEEKLY_DEMAND.map(([k, total, chilled, orders]) => { const [depot, brand, yw] = k.split('|'); const [y, w] = yw.split('-').map(Number); return [depot, brand, y, w, 'history', total, chilled, orders]; });
+  await bulk(db, 'demand_weekly', ['depot', 'brand', 'iso_year', 'iso_week', 'source', 'total_m3', 'chilled_m3', 'orders'], weekly, 'ON CONFLICT (depot, brand, iso_year, iso_week, source) DO NOTHING');
+  invalidateConditions();
+  log(`conditions: ${traffic.length} traffic rows${tc ? ' (CSV)' : ''}, ${roads.length} road-condition rows${rc ? ' (CSV)' : ''}, ${weekly.length} weekly demand rows`);
+}
 
 export async function seedReference(db: Db, log = console.log) {
   const ds = loadDatasets(config.dataDir, log);
@@ -40,15 +83,34 @@ export async function seedReference(db: Db, log = console.log) {
   }
   for (const t of ds.travel) await q(`INSERT INTO district_travel VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`, [t.depot, t.district, t.outMin, t.interMin, t.outKm, t.interKm, t.roadClass], db);
   for (const [brand, docks] of Object.entries(ds.allowance)) for (const [dock, min] of Object.entries(docks)) await q(`INSERT INTO service_allowance VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [brand, dock, min], db);
-  for (const c of ds.calendar) await q(`INSERT INTO calendar (date,is_operating,is_payday,holiday,festival_ramp,monsoon,iso_week) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`, [c.date, c.isOperating, c.isPayday, c.holiday, c.festivalRamp, c.monsoon, isoWeek(c.date)], db);
+  const cal = calendarRows(config.dataDir);
+  await bulk(db, 'calendar', ['date', 'is_operating', 'is_payday', 'holiday', 'festival', 'festival_ramp', 'is_holiday', 'monsoon', 'iso_year', 'iso_week', 'dow'],
+    cal.map(c => [c.date, c.isOperating, c.isPayday, c.holiday, c.festival, c.festivalRamp, c.isHoliday, c.monsoon, c.isoYear, c.isoWeek, c.dow]),
+    `ON CONFLICT (date) DO UPDATE SET is_operating = EXCLUDED.is_operating, is_payday = EXCLUDED.is_payday, holiday = EXCLUDED.holiday, festival = EXCLUDED.festival,
+       festival_ramp = EXCLUDED.festival_ramp, is_holiday = EXCLUDED.is_holiday, monsoon = EXCLUDED.monsoon, iso_year = EXCLUDED.iso_year, iso_week = EXCLUDED.iso_week, dow = EXCLUDED.dow`);
+  await seedConditions(db, log);
+  invalidateSettings();
 }
 
-export async function seedUsers(db: Db) {
-  const hash = await bcrypt.hash(config.demoPassword, 10);
-  for (const u of DEMO_USERS) {
-    await q(`INSERT INTO users (email,name,role,password_hash,pin_hash,depot,outlet_id,vehicle_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (email) DO NOTHING`,
-      [u.email, u.name, u.role, hash, u.pin ? await bcrypt.hash(u.pin, 10) : null, u.depot, u.outlet, u.vehicle], db);
+/** Accounts. With AUTH_PROVIDER=supabase each person also gets a Supabase Auth user (created or linked by
+ *  email) and no local password hash; loaders keep their dock PIN locally. */
+export async function seedUsers(db: Db, log = console.log) {
+  const people = [ADMIN_USER, ...(config.demoMode ? DEMO_USERS : [])];
+  for (const u of people) {
+    const isAdmin = u.role === 'admin';
+    const password = isAdmin && config.adminPassword ? config.adminPassword : config.demoPassword;
+    const mustChange = isAdmin && !config.adminPassword && !config.demoMode;
+    let authId: string | null = null;
+    if (config.authProvider === 'supabase') {
+      try { authId = (await sbEnsureUser(u.email, password, u.role)).id; }
+      catch (e: any) { throw new Error(`Could not create the Supabase Auth user ${u.email}: ${e.message}`); }
+    }
+    const hash = config.authProvider === 'supabase' ? null : await bcrypt.hash(password, 12);
+    await q(`INSERT INTO users (email,name,role,password_hash,pin_hash,depot,outlet_id,vehicle_id,auth_user_id,must_change_password) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT (email) DO UPDATE SET auth_user_id = coalesce(EXCLUDED.auth_user_id, users.auth_user_id)`,
+      [u.email.toLowerCase(), u.name, u.role, hash, u.pin ? await bcrypt.hash(u.pin, 12) : null, u.depot, u.outlet, u.vehicle, authId, mustChange], db);
   }
+  log(`accounts: ${people.length}${config.authProvider === 'supabase' ? ' (linked to Supabase Auth)' : ''}`);
 }
 
 /** Operational data for the seeded day: 143 confirmed orders for Thu 30 Apr and last week's history. */
@@ -87,7 +149,8 @@ export async function seedDay(db: Db) {
   await setClock(config.demoClockStart, db);
 }
 
-const OPERATIONAL = ['vehicle_presence', 'notification_reads', 'notifications', 'audit_log', 'pods', 'stop_events', 'receipts', 'exceptions', 'stop_moves', 'deferrals', 'trip_orders', 'trips', 'plans', 'orders'];
+// the audit log is never wiped: a reset is itself an audited action
+const OPERATIONAL = ['loading_sessions', 'vehicle_presence', 'notification_reads', 'notifications', 'pods', 'attachments', 'stop_events', 'receipts', 'exceptions', 'stop_moves', 'deferrals', 'trip_orders', 'trips', 'plans', 'orders'];
 
 export async function resetDay(log = console.log) {
   await tx(async c => {
@@ -99,10 +162,17 @@ export async function resetDay(log = console.log) {
   log('demo day reset: 143 confirmed orders for Thu 30 Apr 2026');
 }
 
+/** First start: reference data, the admin (and demo accounts), and — in demo mode — the demo day.
+ *  Safe to call on every start: it does nothing once outlets exist. */
 export async function seedIfEmpty(log = console.log) {
   const n = await one<{ n: number }>(`SELECT count(*)::int AS n FROM outlets`);
   if (n && n.n > 0) return false;
-  await tx(async c => { await seedReference(c, log); await seedUsers(c); await seedDay(c); });
-  log('seeded: datasets, 8 accounts, 143 confirmed orders for Thu 30 Apr 2026');
+  await tx(async c => {
+    await seedReference(c, log);
+    await seedUsers(c, log);
+    if (config.demoMode) await seedDay(c);
+    else await q(`INSERT INTO settings (key, value) VALUES ('plan_date', $1) ON CONFLICT (key) DO NOTHING`, [JSON.stringify(DEMO_DAY.date)], c);
+  });
+  log(config.demoMode ? 'seeded: datasets, accounts and the demo day (143 confirmed orders for Thu 30 Apr 2026)' : 'seeded: datasets and the administrator account');
   return true;
 }

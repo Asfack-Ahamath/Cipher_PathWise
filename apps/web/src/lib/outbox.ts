@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, post, store } from './api';
 import { isoLocal } from './clock';
 
-export type EventType = 'trip_started' | 'arrived' | 'delivered' | 'problem' | 'trip_closed' | 'conflict_answer';
+export type EventType = 'trip_started' | 'arrived' | 'delivered' | 'problem' | 'trip_closed' | 'conflict_answer' | 'route_ack';
 export interface OutEvent { clientEventId: string; type: EventType; tripId: number; outletId?: string | null; deviceTime: string; payload: Record<string, any> }
 export interface SyncResult { clientEventId: string; status: 'applied' | 'duplicate' | 'conflict' | 'rejected'; message?: string }
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, WifiOff, MapPin, Search, Snowflake, Truck, ArrowRightLeft, CheckCircle2, Clock, Maximize2 } from 'lucide-react';
+import { AlertTriangle, WifiOff, MapPin, Search, Snowflake, Truck, ArrowRightLeft, CheckCircle2, Clock, Maximize2, Printer, Construction } from 'lucide-react';
+import { printRunSheet } from './runSheet';
 import TripMap, { type MapTrip } from '../../components/TripMap';
 import { IconChip, Button, Callout, Pill, Modal, Field, inputCls, Empty, cx } from '../../components/ds';
 import { ErrorState, Loading, Status, useAct, useApi, useReference } from '../../components/common';
@@ -95,7 +96,10 @@ export default function Tracking() {
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5"><IconChip hue={sel.vehicle.temp === 'reefer' ? 'sky' : 'slate'} size={36}>{sel.vehicle.temp === 'reefer' ? <Snowflake size={16} /> : <Truck size={16} />}</IconChip>
                 <div><div className="text-[16px] font-semibold text-slate-900">{sel.vehicleId} · Trip {sel.trip}</div><div className="text-[12px] text-slate-500">{sel.driverName} · {sel.brand} {sel.district}</div></div></div>
-              {sel.offline ? <Pill label="No signal" color="#4B5563" bg="#E5E7EB" icon={<WifiOff size={11} />} /> : <Status s={sel.status} size="sm" />}
+              <span className="flex items-center gap-1.5">
+                {d && <button onClick={() => printRunSheet(d, outlets)} className="w-8 h-8 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100" title="Print run sheet" aria-label="Print run sheet"><Printer size={15} /></button>}
+                {sel.offline ? <Pill label="No signal" color="#4B5563" bg="#E5E7EB" icon={<WifiOff size={11} />} /> : <Status s={sel.status} size="sm" />}
+              </span>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2 text-[12px]">
               <div className="rounded-lg bg-slate-50 px-2.5 py-2"><div className="text-slate-500">Departs</div><div className="font-semibold tabular text-slate-900">{sel.depart}</div></div>
@@ -104,7 +108,8 @@ export default function Tracking() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            {sel.offline && <Callout tone="neutral" icon={<WifiOff size={15} className="text-slate-500" />} title={`No signal since ${sel.lastSeen ? hhmm(sel.lastSeen) : 'departure'}`}>The driver's phone keeps working and saves every stop. The dashed marker is where the plan says the truck should be. You can still move a stop; if the driver delivers it anyway, you get a conflict to decide, not a silent overwrite.</Callout>}
+            {sel.hold && <Callout tone="warning" icon={<Construction size={15} className="text-amber-600" />} title={`${sel.hold.label} · reported ${sel.hold.at}, about ${sel.hold.minutes} min`}>{sel.hold.note ? `${sel.hold.note}. ` : ''}Expected times below include the hold until {sel.hold.until}.{sel.lateRisk.length ? ` ${sel.lateRisk.join(', ')} may miss the window — consider moving ${sel.lateRisk.length > 1 ? 'them' : 'it'}.` : ' Every remaining stop still fits its window.'}</Callout>}
+            {sel.offline && <Callout tone="neutral" icon={<WifiOff size={15} className="text-slate-500" />} title={`No signal since ${sel.lastSeen ? hhmm(sel.lastSeen) : 'departure'}`}>The driver's phone keeps working and saves every stop — no signal on its own is not a reason to move a stop. The dashed marker is where the plan says the truck should be. Move a stop only if the expected time misses the window; if the driver delivers it anyway, you get a conflict to decide, not a silent overwrite.</Callout>}
             {sel.conflicts > 0 && <Callout tone="warning" title="A sync conflict needs a decision" action={<Button size="sm" onClick={() => nav('/d/exceptions')}>Open exceptions</Button>}>The phone uploaded a delivery for a stop that had been moved.</Callout>}
             <ol className="space-y-2">
               {(d?.stops ?? sel.stops).map((s: any) => {
@@ -115,7 +120,8 @@ export default function Tracking() {
                   <li key={s.outletId} className="rounded-lg border border-[#E4E7EC] px-3.5 py-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-2"><span className={cx('w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold', done ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-700')}>{s.seq}</span><span className="text-[13px] font-semibold text-slate-900">{s.outletId}</span><span className="text-[12px] text-slate-500 truncate">{ot?.district}</span></span>
-                      {done ? <span className="text-[12px] font-semibold text-emerald-700 inline-flex items-center gap-1"><CheckCircle2 size={13} />{tr.doneAt}</span> : <span className="text-[12px] tabular text-slate-600">ETA {tr?.arrive ?? s.arrive}</span>}
+                      {done ? <span className="text-[12px] font-semibold text-emerald-700 inline-flex items-center gap-1"><CheckCircle2 size={13} />{tr.doneAt}</span>
+                        : <span className={cx('text-[12px] tabular', tr?.late ? 'text-red-700 font-semibold' : tr?.lateRisk ? 'text-amber-700 font-semibold' : 'text-slate-600')} title={`Planned ${tr?.arrive ?? s.arrive}`}>ETA {tr?.expected ?? tr?.arrive ?? s.arrive}{tr?.delayMin > 0 ? ` (+${tr.delayMin})` : ''}</span>}
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2 text-[12px] text-slate-500">
                       <span>Window {tr?.window ?? `${ot?.open}–${ot?.close}`}{tr?.outcome && tr.outcome !== 'full' ? ` · ${tr.outcome.replace('_', ' ')}` : ''}{sel.lateRisk.includes(s.outletId) ? ' · late risk' : ''}</span>
@@ -143,23 +149,35 @@ export default function Tracking() {
 }
 
 function MoveStop({ tripId, outletId, onClose }: { tripId: number; outletId: string; onClose: () => void }) {
-  const opts = useApi<any[]>(['move-options', tripId, outletId], `/trips/${tripId}/move-options?outletId=${outletId}`);
-  const [pick, setPick] = useState<string | null>(null);
-  const [reason, setReason] = useState('Driver out of signal; another vehicle can reach the window.');
-  const move = useAct((b: any) => post(`/trips/${tripId}/move-stop`, b), { invalidate: ['tracking', 'trip', 'plan', 'overview'], success: r => `${outletId} moved · driver, loader and store told`, onDone: onClose });
-  const chosen = (opts.data ?? []).find(o => `${o.vehicleId}|${o.trip}` === pick);
+  const opts = useApi<any>(['move-options', tripId, outletId], `/trips/${tripId}/move-options?outletId=${outletId}`);
+  const [pick, setPick] = useState<string>('keep');
+  const [reason, setReason] = useState<string | null>(null);
+  const move = useAct((b: any) => post(`/trips/${tripId}/move-stop`, b), { invalidate: ['tracking', 'trip', 'plan', 'overview'], success: () => `${outletId} moved · driver, loader and store told`, onDone: onClose });
+  const data = opts.data;
+  const options: any[] = data?.options ?? [];
+  const chosen = options.find(o => `${o.vehicleId}|${o.trip}` === pick);
+  const text = reason ?? (data?.why ?? '');
+  const k = data?.keep;
   return (
-    <Modal title={`Move ${outletId} to another vehicle`} onClose={onClose} width={560}>
-      {opts.isLoading ? <Loading /> : (
+    <Modal title={`${outletId}: keep it, or move it?`} onClose={onClose} width={600}>
+      {opts.isLoading ? <Loading /> : opts.error ? <ErrorState error={opts.error} retry={opts.refetch} /> : (
         <div className="space-y-4">
-          <p className="text-[13px] text-slate-600 -mt-1">Each option is checked against every rule, with the arrival time it would give. Only valid options can be picked.</p>
-          <div className="max-h-[300px] overflow-y-auto rounded-lg border border-[#E4E7EC] divide-y divide-[#EEF0F3]">
-            {(opts.data ?? []).length === 0 && <div className="p-4 text-[13px] text-slate-500">No other vehicle at this depot.</div>}
-            {(opts.data ?? []).slice(0, 20).map(o => {
-              const k = `${o.vehicleId}|${o.trip}`;
+          {data.why
+            ? <Callout tone={data.recommendMove ? 'warning' : 'info'} title={data.recommendMove ? 'Moving would reach the store in time' : 'Worth watching'}>{data.why}</Callout>
+            : <Callout tone="success" title="No reason to move this stop">{k.vehicleId} is expected at {k.eta} (window closes {k.closeAt}). {k.lastSeenMinAgo != null && k.lastSeenMinAgo > 10 ? `The phone has had no signal for ${k.lastSeenMinAgo} min, but it keeps working offline.` : ''}</Callout>}
+          <div className="max-h-[320px] overflow-y-auto rounded-lg border border-[#E4E7EC] divide-y divide-[#EEF0F3]">
+            <label className={cx('flex items-center gap-3 px-4 py-3 text-[13px] cursor-pointer hover:bg-slate-50', pick === 'keep' && 'bg-teal-50')}>
+              <input type="radio" name="opt" checked={pick === 'keep'} onChange={() => setPick('keep')} />
+              <span className="flex-1 min-w-0"><span className="font-semibold text-slate-900">Keep on {k.vehicleId} · Trip {k.trip}</span>
+                <span className="block text-[12px] text-slate-500">Planned {k.planned ?? '—'}{k.hold ? ` · held ${k.hold.minutes} min (${k.hold.label})` : ''}</span></span>
+              <span className={cx('tabular whitespace-nowrap font-semibold', k.late ? 'text-red-700' : k.lateRisk ? 'text-amber-700' : 'text-slate-700')}>ETA {k.eta ?? '—'} · closes {k.closeAt}</span>
+            </label>
+            {options.length === 0 && <div className="p-4 text-[13px] text-slate-500">No other vehicle at this depot can take it.</div>}
+            {options.slice(0, 20).map(o => {
+              const key = `${o.vehicleId}|${o.trip}`;
               return (
-                <label key={k} className={cx('flex items-center gap-3 px-4 py-3 text-[13px]', o.ok ? 'cursor-pointer hover:bg-slate-50' : 'opacity-60', pick === k && 'bg-teal-50')}>
-                  <input type="radio" name="opt" disabled={!o.ok} checked={pick === k} onChange={() => setPick(k)} />
+                <label key={key} className={cx('flex items-center gap-3 px-4 py-3 text-[13px]', o.ok ? 'cursor-pointer hover:bg-slate-50' : 'opacity-60', pick === key && 'bg-teal-50')}>
+                  <input type="radio" name="opt" disabled={!o.ok} checked={pick === key} onChange={() => setPick(key)} />
                   <span className="flex-1 min-w-0"><span className="font-semibold text-slate-900">{o.vehicleId} · {o.newTrip ? 'new ' : ''}Trip {o.trip}</span> <span className="text-slate-500">· {o.temp} {o.type} · {o.driverName}</span>
                     {!o.ok && <span className="block text-[12px] text-red-700">{o.problem}</span>}</span>
                   <span className="tabular text-slate-700 whitespace-nowrap">{o.depart ? `dep ${o.depart} · ` : ''}ETA {o.eta ?? '—'}</span>
@@ -167,8 +185,11 @@ function MoveStop({ tripId, outletId, onClose }: { tripId: number; outletId: str
               );
             })}
           </div>
-          <Field label="Reason (sent to the driver and the store)"><input className={inputCls} value={reason} onChange={e => setReason(e.target.value)} /></Field>
-          <div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!chosen || move.isPending} onClick={() => chosen && move.mutate({ outletId, toVehicleId: chosen.vehicleId, toTrip: chosen.trip, reason })}>Move stop</Button></div>
+          {pick !== 'keep' && <Field label="Reason (the driver, the loader and the store see it)" hint="The goods are picked again from depot stock and loaded on the new vehicle."><input className={inputCls} value={text} onChange={e => setReason(e.target.value)} placeholder="e.g. VEH041 held by a road closure; the store would miss its window" /></Field>}
+          <div className="flex justify-end gap-2">
+            <Button onClick={onClose}>{pick === 'keep' ? 'Keep it' : 'Cancel'}</Button>
+            {pick !== 'keep' && <Button variant="primary" disabled={!chosen || text.trim().length < 3 || move.isPending} onClick={() => chosen && move.mutate({ outletId, to: { vehicleId: chosen.vehicleId, trip: chosen.trip }, reason: text.trim() })}>Move to {chosen?.vehicleId}</Button>}
+          </div>
         </div>
       )}
     </Modal>

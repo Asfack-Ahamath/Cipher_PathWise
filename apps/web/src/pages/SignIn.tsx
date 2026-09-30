@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Route, Truck, Tablet, Smartphone, ShoppingBag, Lock, ArrowRight, WifiOff, Check, CheckCircle2, ShieldCheck, User, Delete, Loader2 } from 'lucide-react';
+import { Route, Truck, Tablet, Smartphone, ShoppingBag, Lock, ArrowRight, WifiOff, Check, CheckCircle2, ShieldCheck, User, Delete, Loader2, Settings2, ArrowLeft, Mail } from 'lucide-react';
 import { ROLE_GRAD, ROLE_SOLID } from '../components/ds';
 import { HOME, useAuth } from '../lib/auth';
+import { api, post, type User as AppUser } from '../lib/api';
+import { syncClock } from '../lib/clock';
 
 type Key = 'dispatcher' | 'loader' | 'driver' | 'store';
 type Acc = { key: Key; label: string; email: string; name: string; where: string; device: string; icon: React.ElementType; blurb: string };
@@ -15,8 +17,13 @@ const ACCOUNTS: Acc[] = [
 ];
 const DEMO_PASSWORD = 'PathWise@2026';
 
+type View = 'signin' | 'forgot' | 'recover';
+
 export default function SignIn() {
-  const { signIn } = useAuth();
+  const { signIn, endedReason, adopt } = useAuth();
+  const [cfg, setCfg] = useState<{ demoMode: boolean; passwordRecovery: 'email' | 'admin' } | null>(null);
+  const [view, setView] = useState<View>(() => (/type=recovery/.test(window.location.hash) ? 'recover' : 'signin'));
+  useEffect(() => { api<any>('/auth/config').then(setCfg).catch(() => setCfg({ demoMode: true, passwordRecovery: 'admin' })); }, []);
   const nav = useNavigate();
   const [params] = useSearchParams();
   const [sel, setSel] = useState<Key>('dispatcher');
@@ -36,6 +43,7 @@ export default function SignIn() {
     try {
       const u = await signIn(body);
       const next = params.get('next');
+      if (u.mustChangePassword) { nav('/account?required=1', { replace: true }); return; }
       nav(next && next.startsWith(HOME[u.role]) ? next : HOME[u.role], { replace: true });
     } catch (e: any) { setError(e.message); setPin(''); } finally { setBusy(false); }
   };
@@ -71,16 +79,20 @@ export default function SignIn() {
         </div>
         <div className="relative mt-8 hidden sm:flex flex-wrap items-center justify-between gap-2 text-[12px] text-white/45">
           <span>Team Cipher · Tech-Triathlon 2026</span>
-          <span>Demo accounts · password {DEMO_PASSWORD}</span>
+          {cfg?.demoMode !== false && <span>Demo accounts · password {DEMO_PASSWORD}</span>}
         </div>
       </section>
 
       {/* ── Sign-in form ── */}
       <section className="relative flex items-center justify-center px-4 sm:px-10 py-8 lg:py-12" style={{ background: 'radial-gradient(600px 400px at 100% 0%,#F0FDFA,transparent 60%),radial-gradient(500px 400px at 0% 100%,#EEF2FF,transparent 60%),#fff' }}>
-        <form onSubmit={submit} className="w-full max-w-[460px]">
+        {view === 'forgot' ? <Forgot mode={cfg?.passwordRecovery ?? 'admin'} initial={email} onBack={() => setView('signin')} />
+        : view === 'recover' ? <Recover onBack={() => { history.replaceState(null, '', '/login'); setView('signin'); }} onDone={(t, u) => { history.replaceState(null, '', '/'); adopt(t, u); void syncClock(); nav(HOME[u.role], { replace: true }); }} />
+        : <form onSubmit={submit} className="w-full max-w-[460px]">
           <h2 className="text-[26px] font-semibold tracking-[-0.02em] text-slate-900">Welcome back</h2>
-          <p className="text-[14px] text-slate-500 mt-1">Choose a demo role, or type any account.</p>
+          <p className="text-[14px] text-slate-500 mt-1">{cfg?.demoMode === false ? 'Sign in with your work account.' : 'Choose a demo role, or type any account.'}</p>
+          {endedReason && <div role="status" className="mt-4 px-3.5 py-3 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-[13px] text-amber-900">{endedReason}</div>}
 
+          {cfg?.demoMode !== false && <>
           <div className="mt-6 grid grid-cols-2 gap-3" role="radiogroup" aria-label="Role">
             {ACCOUNTS.map(a => {
               const Icon = a.icon; const on = a.key === sel;
@@ -102,6 +114,9 @@ export default function SignIn() {
             <div className="min-w-0 flex-1"><div className="text-[13px] font-semibold text-slate-900 truncate">{acc.name}</div><div className="text-[12px] text-slate-500 truncate">{acc.where}</div></div>
             <span className="hidden sm:inline-flex text-[11px] font-semibold text-slate-500 bg-white ring-1 ring-[#E6E9F0] rounded-full px-2 h-6 items-center whitespace-nowrap">{acc.device}</span>
           </div>
+          <button type="button" onClick={() => { setSel('dispatcher'); setEmail('admin@pathwise.lk'); setPassword(DEMO_PASSWORD); setError(null); }} className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-slate-500 hover:text-slate-800"><Settings2 size={13} />Administrator (users, settings, audit log): admin@pathwise.lk</button>
+          </>}
+          {cfg?.demoMode === false && <div className="mt-6 inline-flex rounded-lg bg-slate-100 p-0.5">{([['office', 'Email'], ['dock', 'Dock tablet PIN']] as const).map(([k, l]) => <button type="button" key={k} onClick={() => { setSel(k === 'dock' ? 'loader' : 'dispatcher'); setUsePin(k === 'dock'); setEmail(''); setPassword(''); setError(null); }} className={`h-8 px-3 rounded-md text-[12px] font-semibold ${(k === 'dock') === pinMode ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>{l}</button>)}</div>}
 
           {pinMode ? (
             <div className="mt-5">
@@ -117,7 +132,7 @@ export default function SignIn() {
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[12px] text-slate-500">Demo PINs: Kandy <b className="tabular">2468</b> · Peliyagoda <b className="tabular">1357</b>. <button type="button" className="underline" onClick={() => setUsePin(false)}>Use email instead</button></p>
+              <p className="mt-2 text-[12px] text-slate-500">{cfg?.demoMode !== false && <>Demo PINs: Kandy <b className="tabular">2468</b> · Peliyagoda <b className="tabular">1357</b>. </>}<button type="button" className="underline" onClick={() => setUsePin(false)}>Use email instead</button></p>
             </div>
           ) : (
             <div className="mt-5 grid gap-4">
@@ -127,7 +142,10 @@ export default function SignIn() {
               <label className="block"><span className="block text-[12px] font-semibold text-slate-700 mb-1.5">Password</span>
                 <span className="relative block"><Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" name="password" className="w-full h-11 pl-10 pr-3 text-[14px] rounded-xl bg-white ring-1 ring-[#D0D5DD] outline-none focus:ring-2 focus:ring-teal-600" /></span></label>
-              {sel === 'loader' && <button type="button" className="text-left text-[12px] text-slate-500 underline" onClick={() => setUsePin(true)}>Use the dock PIN instead</button>}
+              <div className="flex items-center justify-between gap-2">
+                {sel === 'loader' ? <button type="button" className="text-left text-[12px] text-slate-500 underline" onClick={() => setUsePin(true)}>Use the dock PIN instead</button> : <span />}
+                <button type="button" className="text-[12px] font-semibold text-teal-700 hover:text-teal-800" onClick={() => setView('forgot')}>Forgot password?</button>
+              </div>
             </div>
           )}
 
@@ -137,7 +155,7 @@ export default function SignIn() {
           {!pinMode && (
             <button type="submit" disabled={busy} className="mt-6 w-full h-12 rounded-xl text-[15px] font-semibold text-white flex items-center justify-center gap-2 transition hover:brightness-110 active:scale-[.99] disabled:opacity-70"
               style={{ background: ROLE_GRAD[acc.key], boxShadow: `0 14px 28px -14px ${ROLE_SOLID[acc.key]}` }}>
-              {busy ? <Loader2 size={17} className="animate-spin" /> : <>Sign in{email === acc.email ? ` as ${acc.name.split(' ')[0]}` : ''} <ArrowRight size={17} /></>}
+              {busy ? <Loader2 size={17} className="animate-spin" /> : <>Sign in{cfg?.demoMode !== false && email === acc.email ? ` as ${acc.name.split(' ')[0]}` : ''} <ArrowRight size={17} /></>}
             </button>
           )}
 
@@ -146,8 +164,60 @@ export default function SignIn() {
             <span className="w-1 h-1 rounded-full bg-slate-300" />
             <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={13} />Works offline in the field</span>
           </div>
-        </form>
+        </form>}
       </section>
     </div>
+  );
+}
+
+function Forgot({ mode, initial, onBack }: { mode: 'email' | 'admin'; initial: string; onBack: () => void }) {
+  const [email, setEmail] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const send = async (e: FormEvent) => {
+    e.preventDefault(); setBusy(true); setError(null);
+    try { setMsg((await post<{ message: string }>('/auth/forgot', { email: email.trim() })).message); } catch (err: any) { setError(err.message); } finally { setBusy(false); }
+  };
+  return (
+    <form onSubmit={send} className="w-full max-w-[460px]">
+      <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600 hover:text-slate-900"><ArrowLeft size={15} />Back to sign in</button>
+      <h2 className="mt-4 text-[24px] font-semibold tracking-[-0.02em] text-slate-900">Reset your password</h2>
+      <p className="text-[14px] text-slate-500 mt-1">{mode === 'email' ? 'We will email you a link to choose a new password.' : 'Passwords are reset by your PathWise administrator.'}</p>
+      <label className="block mt-6"><span className="block text-[12px] font-semibold text-slate-700 mb-1.5">Work email</span>
+        <span className="relative block"><Mail size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input type="email" required value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" className="w-full h-11 pl-10 pr-3 text-[14px] rounded-xl bg-white ring-1 ring-[#D0D5DD] outline-none focus:ring-2 focus:ring-teal-600" /></span></label>
+      {msg && <div role="status" className="mt-4 px-3.5 py-3 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 text-[13px] text-emerald-900">{msg}</div>}
+      {error && <div role="alert" className="mt-4 px-3.5 py-3 rounded-xl bg-red-50 ring-1 ring-red-200 text-[13px] text-red-800">{error}</div>}
+      <button type="submit" disabled={busy || !email} className="mt-6 w-full h-12 rounded-xl text-[15px] font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-60 flex items-center justify-center gap-2">{busy && <Loader2 size={16} className="animate-spin" />}{mode === 'email' ? 'Send reset link' : 'Check what to do'}</button>
+    </form>
+  );
+}
+
+function Recover({ onBack, onDone }: { onBack: () => void; onDone: (token: string, user: AppUser) => void }) {
+  const token = new URLSearchParams(window.location.hash.slice(1)).get('access_token') ?? '';
+  const [pw, setPw] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ok = pw.length >= 10 && /[A-Za-z]/.test(pw) && /\d/.test(pw) && pw === again;
+  const save = async (e: FormEvent) => {
+    e.preventDefault(); if (!ok) return; setBusy(true); setError(null);
+    try { const r = await post<{ token: string; user: AppUser }>('/auth/recover', { accessToken: token, password: pw }); onDone(r.token, r.user); }
+    catch (err: any) { setError(err.message); } finally { setBusy(false); }
+  };
+  return (
+    <form onSubmit={save} className="w-full max-w-[460px]">
+      <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-slate-900">Choose a new password</h2>
+      <p className="text-[14px] text-slate-500 mt-1">At least 10 characters, with a letter and a number.</p>
+      {!token && <div role="alert" className="mt-4 px-3.5 py-3 rounded-xl bg-red-50 ring-1 ring-red-200 text-[13px] text-red-800">This reset link is incomplete. Ask for a new one.</div>}
+      <label className="block mt-6"><span className="block text-[12px] font-semibold text-slate-700 mb-1.5">New password</span>
+        <input type="password" autoComplete="new-password" value={pw} onChange={e => setPw(e.target.value)} className="w-full h-11 px-3 text-[14px] rounded-xl bg-white ring-1 ring-[#D0D5DD] outline-none focus:ring-2 focus:ring-teal-600" /></label>
+      <label className="block mt-4"><span className="block text-[12px] font-semibold text-slate-700 mb-1.5">Type it again</span>
+        <input type="password" autoComplete="new-password" value={again} onChange={e => setAgain(e.target.value)} className="w-full h-11 px-3 text-[14px] rounded-xl bg-white ring-1 ring-[#D0D5DD] outline-none focus:ring-2 focus:ring-teal-600" /></label>
+      {error && <div role="alert" className="mt-4 px-3.5 py-3 rounded-xl bg-red-50 ring-1 ring-red-200 text-[13px] text-red-800">{error}</div>}
+      <button type="submit" disabled={!ok || busy || !token} className="mt-6 w-full h-12 rounded-xl text-[15px] font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-60 flex items-center justify-center gap-2">{busy && <Loader2 size={16} className="animate-spin" />}Save and sign in</button>
+      <button type="button" onClick={onBack} className="mt-3 w-full text-[13px] font-semibold text-slate-600">Back to sign in</button>
+    </form>
   );
 }

@@ -211,7 +211,7 @@ export function DetailPanel({ open, onClose, children, width = 380 }: { open: bo
 /* ── Modal ── */
 export function Modal({ title, onClose, children, width = 480 }: { title: ReactNode; onClose: () => void; children: ReactNode; width?: number }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40" onClick={onClose}>
       <div role="dialog" aria-modal="true" style={{ width }} className="max-w-full bg-white rounded-xl shadow-[0_24px_48px_-12px_rgba(15,23,42,.35)]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 h-14 border-b border-[#E4E7EC]">
           <h3 className="text-[16px] font-semibold text-slate-900">{title}</h3>

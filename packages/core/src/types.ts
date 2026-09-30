@@ -6,7 +6,7 @@ export type Parking = 'normal' | 'van_only' | 'mall_dock';
 export type Temp = 'chilled' | 'ambient';
 export type VehicleType = 'truck' | 'van';
 export type VehicleTemp = 'reefer' | 'ambient';
-export type Role = 'dispatcher' | 'loader' | 'driver' | 'store_manager';
+export type Role = 'admin' | 'dispatcher' | 'loader' | 'driver' | 'store_manager';
 
 export interface Outlet {
   id: string; brand: Brand; district: string; depot: Depot; dock: Dock; parking: Parking;
@@ -40,6 +40,10 @@ export interface Network {
   travel: Map<string, TravelRow>; // key `${depot}|${district}`
   allowance: Record<Brand, Record<Dock, number>>; // service_allowance.csv, minutes per stop
   rules: PlanningRules;
+  /** traffic_speed.csv, key `${district}|${hour}|${monsoon}` → speed index (100 = free flow) */
+  traffic?: Map<string, number>;
+  /** road_conditions.csv, key `${district}|${date}` → disruption index (100 = clear) */
+  roads?: Map<string, number>;
 }
 
 export interface PlanningRules {

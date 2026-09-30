@@ -1,17 +1,19 @@
 import { useMemo, useState } from 'react';
-import { ClipboardList, Search, Phone, Smartphone, AlertTriangle, Plus, Clock, Lock, X } from 'lucide-react';
+import { ClipboardList, Search, Phone, Smartphone, AlertTriangle, Plus, Clock, Lock, X, Pencil, Ban } from 'lucide-react';
 import { Toolbar, Tabs, Segmented, Button, Callout, DetailPanel, Modal, Field, inputCls, KeyValues, Pill, Empty } from '../../components/ds';
 import { STATUS } from '../../components/StatusChip';
 import { BrandTag, TempTag, OutletBadges } from '../../components/tags';
-import { ErrorState, Loading, Status, useAct, useApi, useReference, fmt } from '../../components/common';
-import { post } from '../../lib/api';
+import { DownloadButton, ErrorState, Loading, Status, useAct, useApi, useReference, fmt } from '../../components/common';
+import { patch, post } from '../../lib/api';
 import { hhmm } from '../../lib/clock';
 import { CATEGORIES } from '../../lib/categories';
 import { useDepot } from './DispatcherApp';
 
 export default function Orders() {
   const depot = useDepot();
-  const [tab, setTab] = useState<'queue' | 'late'>('queue');
+  const [tab, setTab] = useState<'queue' | 'late' | 'cancelled'>('queue');
+  const [editing, setEditing] = useState<any | null>(null);
+  const [cancelling, setCancelling] = useState<any | null>(null);
   const [search, setSearch] = useState('');
   const [brand, setBrand] = useState<'all' | 'Fresh' | 'Style' | 'Tech'>('all');
   const [status, setStatus] = useState<'all' | 'placed' | 'unplaced' | 'deferred'>('all');
@@ -39,12 +41,13 @@ export default function Orders() {
     <div className="flex flex-1 min-h-0">
       <div className="flex-1 min-w-0 flex flex-col">
         <Toolbar icon={<ClipboardList size={18} />} hue="indigo"
-          title={<span className="inline-flex items-center gap-2.5">Order queue <span className="inline-flex items-center gap-1 h-6 px-2 rounded-md bg-slate-100 text-[12px] font-semibold text-slate-600"><Lock size={12} />Closed 16:00</span></span>}
+          title={<span className="inline-flex items-center gap-2.5">Order queue <span className="inline-flex items-center gap-1 h-6 px-2 rounded-md bg-slate-100 text-[12px] font-semibold text-slate-600"><Lock size={12} />Closed {ref.data?.operations?.cutoffTime ?? '16:00'}</span></span>}
           subtitle={<span className="flex flex-wrap items-center gap-x-4 gap-y-1">{all.length} confirmed orders for {d.dateLabel} — app and phone orders in one queue <span className="flex gap-3 text-[12px]"><span className="flex items-center gap-1"><Smartphone size={12} />{counts.app} app</span><span className="flex items-center gap-1"><Phone size={12} />{counts.phone} phone</span></span></span>}
-          actions={<Button variant="primary" icon={<Plus size={15} />} onClick={() => setPhoneOpen(true)}>Add phone order</Button>}>
+          actions={<><DownloadButton path={`/orders.csv?date=${d.date}`} name={`pathwise-orders-${d.date}.csv`}>Export CSV</DownloadButton><Button variant="primary" icon={<Plus size={15} />} onClick={() => setPhoneOpen(true)}>Add phone order</Button></>}>
           <Tabs className="mt-4 -mb-4" value={tab} onChange={setTab} items={[
             { id: 'queue', label: <>Confirmed for {d.dateLabel} <span className="ml-1 text-slate-400 tabular">{all.length}</span></> },
             { id: 'late', label: <>After cutoff <span className="ml-1 text-slate-400 tabular">{d.afterCutoff.length}</span></> },
+            { id: 'cancelled', label: <>Cancelled <span className="ml-1 text-slate-400 tabular">{d.cancelled?.length ?? 0}</span></> },
           ]} />
         </Toolbar>
         {tab === 'queue' ? (
@@ -90,10 +93,25 @@ export default function Orders() {
               )}
             </div>
           </>
+        ) : tab === 'cancelled' ? (
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-[960px] px-4 sm:px-6 py-6">
+              <div className="bg-white rounded-xl border border-[#E6E9F0] divide-y divide-[#EEF0F3]">
+                {(d.cancelled ?? []).length === 0 && <Empty title="No cancelled orders for this day" />}
+                {(d.cancelled ?? []).map((c: any) => (
+                  <div key={c.id} className="px-5 py-4 flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span className="font-mono text-[12px] text-slate-500 w-28">{c.id}</span>
+                    <div className="flex-1 min-w-[200px]"><div className="text-[13px] font-semibold text-slate-900">{outlets.get(c.outletId)?.name ?? c.outletId}</div><div className="text-[12px] text-slate-500">Cancelled {hhmm(c.cancelledAt)} · {c.cancelReason}</div></div>
+                    <TempTag temp={c.temp} /><span className="text-[12px] text-slate-500 tabular">{c.units} units</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="flex-1 overflow-y-auto">
             <div className="mx-auto max-w-[960px] px-4 sm:px-6 py-6 space-y-4">
-              <Callout icon={<Clock size={15} className="text-slate-500" />}>Orders received after the 16:00 cutoff join the following run. The store is told the new date straight away — these are not deferrals, and nothing is lost.</Callout>
+              <Callout icon={<Clock size={15} className="text-slate-500" />}>Orders received after the {ref.data?.operations?.cutoffTime ?? '16:00'} cutoff join the following run. The store is told the new date straight away — these are not deferrals, and nothing is lost.</Callout>
               <div className="bg-white rounded-xl border border-[#E6E9F0] divide-y divide-[#EEF0F3]">
                 {d.afterCutoff.length === 0 && <Empty title="No late orders" />}
                 {d.afterCutoff.map((l: any) => {
@@ -126,11 +144,20 @@ export default function Orders() {
             {s.deferredYesterday && <Callout tone="warning" title="Skipped on the last run">The planner puts this outlet first so it is not skipped twice in a row.</Callout>}
             {s.placement && <Callout tone="info" title={`Placed on ${s.placement}`}>See the plan board for stop order and arrival time.</Callout>}
             {s.deferral && <Callout tone="warning" title={`Deferred to ${s.deferral.toDate} · ${s.deferral.kind}`}>{ref.data?.reasons?.[s.deferral.reason]?.label ?? s.deferral.reason}</Callout>}
+            {s.status === 'confirmed' && !s.placement && !s.parentOrderId && (
+              <div className="flex gap-2">
+                <Button size="sm" icon={<Pencil size={13} />} onClick={() => setEditing(s)}>Change quantities</Button>
+                <Button size="sm" variant="danger" icon={<Ban size={13} />} onClick={() => setCancelling(s)}>Cancel order</Button>
+              </div>
+            )}
+            {s.placement && <p className="text-[12px] text-slate-500">This order is on a published trip; change it on the plan board.</p>}
             {twin.length > 0 && <div><div className="text-[12px] font-semibold text-slate-700 mb-1.5">Also from this outlet today</div>{twin.map((t: any) => <button key={t.id} onClick={() => setSel(t.id)} className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-[13px]"><span className="font-mono text-[12px]">{t.id}</span><TempTag temp={t.temp} /></button>)}</div>}
           </div>
         </>}
       </DetailPanel>
       {phoneOpen && <PhoneOrder onClose={() => setPhoneOpen(false)} outlets={[...outlets.values()]} />}
+      {editing && <EditOrder order={editing} onClose={() => setEditing(null)} />}
+      {cancelling && <CancelOrder order={cancelling} onClose={() => { setCancelling(null); setSel(null); }} />}
     </div>
   );
 }
@@ -175,6 +202,39 @@ function PhoneOrder({ onClose, outlets }: { onClose: () => void; outlets: any[] 
           <div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!ot || total === 0 || place.isPending} onClick={() => place.mutate()}>Confirm order</Button></div>
         </div>
       )}
+    </Modal>
+  );
+}
+
+function EditOrder({ order, onClose }: { order: any; onClose: () => void }) {
+  const cats = CATEGORIES[order.brand]?.[order.temp as 'ambient' | 'chilled'] ?? [];
+  const [units, setUnits] = useState<Record<string, number>>(() => Object.fromEntries((order.lines ?? []).map((l: any) => [l.category, l.units])));
+  const lines = cats.map(c => ({ category: c.k, units: units[c.k] ?? 0 })).filter(l => l.units > 0);
+  const save = useAct(() => patch(`/orders/${order.id}`, { lines }), { invalidate: ['orders', 'overview', 'plan'], success: `${order.id} updated · the store was told`, onDone: onClose });
+  return (
+    <Modal title={`Change ${order.id}`} onClose={onClose} width={480}>
+      {!order.lines?.length && <Callout tone="info" className="mb-3">This order came without category lines; enter the quantities to replace it.</Callout>}
+      <div className="space-y-2">
+        {cats.map(c => (
+          <div key={c.k} className="flex items-center justify-between gap-3">
+            <span className="text-[13px] text-slate-700">{c.k}</span>
+            <input type="number" min={0} max={500} className={`${inputCls} w-24 text-right`} value={units[c.k] ?? ''} placeholder="0" onChange={e => setUnits({ ...units, [c.k]: Math.max(0, Math.min(500, Number(e.target.value) || 0)) })} aria-label={`${c.k} units`} />
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!lines.length || save.isPending} onClick={() => save.mutate()}>Save</Button></div>
+    </Modal>
+  );
+}
+
+function CancelOrder({ order, onClose }: { order: any; onClose: () => void }) {
+  const [reason, setReason] = useState('');
+  const cancel = useAct(() => post(`/orders/${order.id}/cancel`, { reason: reason.trim() }), { invalidate: ['orders', 'overview', 'plan'], success: `${order.id} cancelled · the store was told`, onDone: onClose });
+  return (
+    <Modal title={`Cancel ${order.id}?`} onClose={onClose} width={440}>
+      <p className="text-[13px] text-slate-600 mb-3">{order.outletId} · {order.temp} · {order.units} units. The order is removed from the draft plan and the store is notified.</p>
+      <Field label="Reason"><input className={inputCls} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Store called: ordered twice" /></Field>
+      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Keep order</Button><Button variant="danger" disabled={reason.trim().length < 3 || cancel.isPending} onClick={() => cancel.mutate()}>Cancel order</Button></div>
     </Modal>
   );
 }

@@ -1,8 +1,8 @@
 import { useMemo, useState, type ElementType } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, WifiOff, Package, CheckCircle2, RefreshCw, Wrench, ArrowRight, Store, MapPinOff, Loader2 } from 'lucide-react';
+import { AlertTriangle, WifiOff, Package, CheckCircle2, RefreshCw, Wrench, ArrowRight, Store, MapPinOff, Loader2, Scale } from 'lucide-react';
 import { IconChip, Button, Callout, KeyValues, Overline, Pill, Count, Field, inputCls, Empty, cx } from '../../components/ds';
-import { ErrorState, Loading, useAct, useApi, useReference } from '../../components/common';
+import { AuthImage, ErrorState, Loading, useAct, useApi, useReference } from '../../components/common';
 import { post } from '../../lib/api';
 import { hhmm, useNow } from '../../lib/clock';
 
@@ -13,9 +13,10 @@ const TYPE_META: Record<string, { icon: ElementType; color: string; bg: string; 
   sync_conflict: { icon: RefreshCw, color: '#D97706', bg: '#FEF3C7', label: 'Sync conflict' },
   receipt_issue: { icon: Store, color: '#DC2626', bg: '#FEE2E2', label: 'Receipt issue' },
   road_problem: { icon: AlertTriangle, color: '#D97706', bg: '#FEF3C7', label: 'Road problem' },
+  size_divergence: { icon: Scale, color: '#7C3AED', bg: '#EDE9FE', label: 'Size differs' },
 };
 
-type Opt = { decision: string; label: string; effect: string; needsVehicle?: boolean };
+type Opt = { decision: string; label: string; effect: string; needsVehicle?: boolean; needsNote?: boolean };
 function options(e: any): Opt[] {
   const d = e.detail ?? {};
   switch (e.type) {
@@ -40,6 +41,10 @@ function options(e: any): Opt[] {
       { decision: 'redeliver', label: 'Replace on the next run', effect: 'A replacement order for what was short or damaged goes on the next run with priority.' },
       { decision: 'credit', label: 'Credit the store', effect: 'The store is credited; nothing is re-sent.' },
     ];
+    case 'size_divergence': return [
+      { decision: 'remove_line', label: `Take ${e.orderId} off the truck · deliver on the next run`, effect: 'The loader leaves it at the depot, the order moves to the next run with priority, and the store is told why.' },
+      { decision: 'accept', label: d.overCapacity ? 'Load anyway (override)' : 'Accept the new size', effect: d.overCapacity ? 'The truck leaves above its rated capacity. Say why — this is recorded.' : 'The line is loaded with its real size; nothing else changes.', needsNote: !!d.overCapacity },
+    ];
     default: return [{ decision: 'acknowledge', label: 'Acknowledge', effect: 'Logged. The driver sees you have read it.' }];
   }
 }
@@ -51,7 +56,9 @@ function summary(e: any) {
     case 'vehicle_fault': return `${d.type} reported at the dock (${d.severity}). ${d.vehicleId} departs ${d.departs}.${d.note ? ` ${d.note}` : ''}`;
     case 'non_delivery': return `${d.reasonLabel} at ${d.at}. Driver recommends ${d.recommendation === 'retry_today' ? 'retrying later today' : 'returning the goods to the depot'}.${d.note ? ` Note: ${d.note}` : ''}`;
     case 'sync_conflict': return `${e.vehicleId} recorded a delivery at ${e.outletId} at ${d.deliveredAt} (${d.outcome}, received by ${d.receiver ?? '—'}) while out of signal. You had moved this stop to ${d.toVehicle ?? 'another vehicle'} · Trip ${d.toTrip ?? '—'} at ${d.movedAt}.${d.driverAnswer ? ` Driver says: "${d.driverAnswer}".` : ''}`;
-    case 'receipt_issue': return `The store checked the delivery against the driver's proof: ${(d.lines ?? []).map((l: any) => `${l.orderId} ${l.status} (${l.received} of ${l.expected})`).join('; ')}.${d.note ? ` Note: ${d.note}` : ''}`;
+    case 'receipt_issue': return `The store checked the delivery against the driver's proof: ${(d.lines ?? []).map((l: any) => `${l.orderId} ${l.status} (store counted ${l.received} of ${l.expected}${l.driverUnits != null ? `; driver recorded ${l.driverUnits}` : ''})`).join('; ')}.${d.note ? ` Note: ${d.note}` : ''}`;
+    case 'size_divergence': return `On the dock ${e.orderId} measured ${d.actual?.kg} kg / ${d.actual?.m3} m³ (the order said ${d.planned?.kg} kg / ${d.planned?.m3} m³). ${d.overCapacity ? `${e.vehicleId} would carry ${Math.round(d.truck?.kg)} of ${d.truck?.weightCap} kg and ${Number(d.truck?.m3).toFixed(1)} of ${d.truck?.volumeCap} m³ — over its limit, so the loader cannot release until you decide.` : 'The truck still fits.'} Departs ${d.departs}.${d.note ? ` Loader: ${d.note}` : ''}`;
+    case 'road_problem': return `${d.label ?? d.kind ?? 'Problem'} at ${d.at ?? hhmm(e.raisedAt)}${d.delayMin ? `, about ${d.delayMin} min` : ''}.${d.note ? ` ${d.note}` : ''}${d.delayMin >= 30 ? ' The affected stores were told; live tracking shows the new arrival times — move a stop only if it would miss its window.' : ''}`;
     default: return `${d.label ?? d.kind ?? 'Problem'} at ${d.at ?? hhmm(e.raisedAt)}.${d.note ? ` ${d.note}` : ''}`;
   }
 }
@@ -103,6 +110,7 @@ export default function Exceptions() {
             <p className="text-[13px] text-slate-500 mt-0.5">{sel.raisedBy ? `${sel.raisedByRole === 'store_manager' ? 'Store manager' : sel.raisedByRole?.[0].toUpperCase() + sel.raisedByRole?.slice(1)} · ${sel.raisedBy}` : 'System'}</p>
             <div className="mt-6 space-y-5">
               <div className="bg-white rounded-xl border border-[#E6E9F0] p-5 text-[14px] leading-6 text-slate-800">{summary(sel)}</div>
+              {(sel.photoUrl || sel.photoUrls?.length > 0) && <div className="flex flex-wrap gap-2">{[sel.photoUrl, ...(sel.photoUrls ?? [])].filter(Boolean).map((u: string) => <AuthImage key={u} src={u} alt="Photo from the field" className="w-40 h-28" />)}</div>}
               <KeyValues cols={3} items={[['Vehicle', sel.vehicleId ? `${sel.vehicleId}${sel.tripNo ? ` · Trip ${sel.tripNo}` : ''}` : '—'], ['Outlet', sel.outletId ?? '—'], ['Order', sel.orderId ?? '—']]} />
               {sel.status !== 'open' ? (
                 <Callout tone="success" title={`Decided: ${sel.decision}`}>{sel.resolvedBy} at {hhmm(sel.resolvedAt)}{sel.decisionNote ? ` · ${sel.decisionNote}` : ''}. Loader, driver and store were told.</Callout>
@@ -122,9 +130,9 @@ export default function Exceptions() {
                   {options(sel).find(o => o.decision === pick)?.needsVehicle && (
                     <Field label="Replacement vehicle"><select className={`${inputCls} mt-1`} value={vehicleId} onChange={e => setVehicleId(e.target.value)}><option value="">Choose…</option>{swapCandidates.map((v: any) => <option key={v.id} value={v.id}>{v.id} · {v.temp} {v.type} · {v.depot} · {v.volumeCap} m³</option>)}</select></Field>
                   )}
-                  <div className="mt-4"><Field label="Note (optional)"><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="Saved to the audit log" /></Field></div>
+                  <div className="mt-4"><Field label={options(sel).find(o => o.decision === pick)?.needsNote ? "Why (required)" : "Note (optional)"}><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="Saved to the audit log" /></Field></div>
                   <div className="mt-4 flex justify-end">
-                    <Button variant="primary" icon={resolve.isPending ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />} disabled={!pick || resolve.isPending || (options(sel).find(o => o.decision === pick)?.needsVehicle && !vehicleId)} onClick={() => resolve.mutate({ decision: pick, note: note || undefined, vehicleId: vehicleId || undefined })} data-testid="decide-confirm">Confirm decision</Button>
+                    <Button variant="primary" icon={resolve.isPending ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />} disabled={!pick || resolve.isPending || (options(sel).find(o => o.decision === pick)?.needsVehicle && !vehicleId) || (options(sel).find(o => o.decision === pick)?.needsNote && note.trim().length < 3)} onClick={() => resolve.mutate({ decision: pick, note: note || undefined, vehicleId: vehicleId || undefined })} data-testid="decide-confirm">Confirm decision</Button>
                   </div>
                 </section>
               )}

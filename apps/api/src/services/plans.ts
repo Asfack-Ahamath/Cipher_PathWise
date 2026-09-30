@@ -3,7 +3,21 @@ import { audit, notify } from '../audit.js';
 import { dayLabel, nowSync } from '../clock.js';
 import { one, pool, q, tx, type Db } from '../db.js';
 import { bad, conflict, notFound } from '../errors.js';
+import { z } from 'zod';
 import { loadNetwork, nextOperatingDay, ordersForDate } from './network.js';
+import { liveEta } from './live.js';
+
+const vehicleId = z.string().trim().regex(/^VEH\d{3}$/, 'Vehicle ids look like VEH041.');
+export const MoveBody = z.object({
+  orderId: z.string().trim().min(1).max(40),
+  target: z.object({ vehicleId, trip: z.number().int().min(1).max(3) }).nullable(),
+  reason: z.object({ reason: z.enum(['capacity_volume', 'capacity_weight', 'no_reefer_capacity', 'no_van_capacity', 'vehicle_in_workshop', 'time_budget_exceeded', 'window_unreachable', 'fuel_quota', 'after_cutoff', 'dock_shortfall', 'other']), why: z.string().trim().max(300).optional() }).optional(),
+}).refine(b => b.target || b.reason?.reason !== 'other' || !!b.reason?.why, { message: 'Add a note when the reason is "Other".', path: ['reason', 'why'] });
+export const LiveMoveBody = z.object({
+  outletId: z.string().trim().regex(/^OUT\d{3}$/, 'Outlet ids look like OUT116.'),
+  to: z.object({ vehicleId, trip: z.number().int().min(1).max(3).optional() }),
+  reason: z.string().trim().min(3, 'Say why the stop is moving — the driver and the store will see it.').max(300),
+});
 
 /* ──────────────────────────────────────────────────────────────────────────
    Plans. A draft is JSON on a plans row (editable, validated on every change).
@@ -133,6 +147,13 @@ export async function moveInDraft(date: string, userId: number, orderId: string,
   });
 }
 
+/** Every version of the day's plan, newest first, with who published it and what changed. */
+export async function planVersions(date: string) {
+  return q<any>(`SELECT p.id, p.version, p.status, p.source, p.created_at AS "createdAt", p.published_at AS "publishedAt", p.note, p.stats, p.changes,
+      jsonb_array_length(p.trips) AS trips, jsonb_array_length(p.deferrals) AS "deferralProposals", c.name AS "createdBy", u.name AS "publishedBy"
+    FROM plans p LEFT JOIN users c ON c.id = p.created_by LEFT JOIN users u ON u.id = p.published_by WHERE p.plan_date = $1 ORDER BY p.version DESC`, [date]);
+}
+
 export async function discardDraft(date: string, userId: number) {
   await q(`DELETE FROM plans WHERE plan_date = $1 AND status = 'draft'`, [date]);
   await audit(pool, userId, 'plan.discard', `plan:${date}`);
@@ -208,6 +229,14 @@ export async function publish(date: string, userId: number) {
       await notify(c, `depot:${dep}`, 'plan_changed', `${ch.vehicleId} Trip ${ch.trip} changed in plan v${d.version}`, [ch.added.length ? `Added ${ch.added.join(', ')}` : '', ch.removed.length ? `Removed ${ch.removed.join(', ')}` : ''].filter(Boolean).join(' · '), { tone: 'amber', link: `/l/trip/${ch.id}` });
       await notify(c, `vehicle:${ch.vehicleId}`, 'plan_changed', `Your Trip ${ch.trip} changed`, 'Open your run to see the new stops.', { tone: 'amber', link: '/r' });
     }
+    const plannedOrders = orderRows.filter(o => planned.has(o.id));
+    const stats = {
+      trips: d.trips.length, vehicles: new Set(d.trips.map(t => t.vehicleId)).size, orders: plannedOrders.length, deferred: unassigned.length,
+      units: plannedOrders.reduce((a, o) => a + o.units, 0), kg: Math.round(plannedOrders.reduce((a, o) => a + Number(o.kg), 0)),
+      warnings: v.issues.length - v.errors.length,
+    };
+    const changes = changedTrips.map(ch => ({ vehicleId: ch.vehicleId, trip: ch.trip, added: ch.added, removed: ch.removed, cancelled: ch.status === 'cancelled' }));
+    await c.query(`UPDATE plans SET stats = $2, changes = $3 WHERE id = $1`, [d.id, JSON.stringify(stats), JSON.stringify(changes)]);
     await audit(c, userId, 'plan.publish', `plan:${date}`, { version: d.version, trips: d.trips.length, deferred: unassigned.length });
     return { version: d.version, trips: d.trips.length, deferred: unassigned.length, nextRun };
   });
@@ -241,22 +270,42 @@ async function simulateMove(c: Db, net: Network, date: string, fromTripId: numbe
   return { ids, target, newTrip, tp, errors: check.errors, eta: stop ? toHHMM(stop.arrive) : null };
 }
 
-/** Which vehicles could take this stop right now (for the dispatcher's move dialog). */
+/** Which vehicles could take this stop right now (for the dispatcher's move dialog). The first row is always
+ *  "keep it where it is", with the expected arrival that includes traffic and any delay the driver reported,
+ *  so a move is only suggested when it actually helps the store. */
 export async function moveOptions(date: string, fromTripId: number, outletId: string) {
   const net = await loadNetwork();
-  const from = await one<any>(`SELECT vehicle_id FROM trips WHERE id = $1`, [fromTripId]);
+  const from = await one<any>(`SELECT id, vehicle_id, trip_no, depart, status, to_char(plan_date,'YYYY-MM-DD') AS plan_date FROM trips WHERE id = $1`, [fromTripId]);
   const ot = net.outlets.get(outletId);
   if (!from || !ot) throw notFound('Trip or outlet not found.');
-  const orders = await q<any>(`SELECT o.temp FROM trip_orders tor JOIN orders o ON o.id = tor.order_id WHERE tor.trip_id = $1 AND o.outlet_id = $2`, [fromTripId, outletId]);
+  const orders = await q<any>(`SELECT o.temp FROM trip_orders tor JOIN orders o ON o.id = tor.order_id WHERE tor.trip_id = $1 AND o.outlet_id = $2 AND tor.moved_at IS NULL AND tor.load_status <> 'removed'`, [fromTripId, outletId]);
+  if (!orders.length) throw bad(`${outletId} is not on this trip any more.`);
   const needReefer = orders.some(o => o.temp === 'chilled');
   const at = nowSync();
+  const eta = await liveEta(net, from, at);
+  const cur = eta.stops.find(x => x.outletId === outletId);
+  const presence = await one<any>(`SELECT last_seen FROM vehicle_presence WHERE vehicle_id = $1`, [from.vehicle_id]);
+  const quietMin = presence ? Math.round((at.getTime() - new Date(presence.last_seen).getTime()) / 60000) : null;
+  const keep = {
+    vehicleId: from.vehicle_id, trip: from.trip_no, keep: true, eta: cur?.expectedArriveHHMM ?? null, planned: cur?.plannedHHMM ?? null, closeAt: cur?.closeHHMM ?? ot.close,
+    delivered: !!cur?.done, late: !!cur?.late, lateRisk: !!cur?.lateRisk, hold: eta.hold, lastSeenMinAgo: quietMin,
+  };
+  // why a move might be needed — never "no signal" alone: a phone out of coverage still delivers
+  const why = cur?.done ? 'Already delivered — nothing to move.'
+    : eta.hold ? `${from.vehicle_id} reported "${eta.hold.label}" at ${eta.hold.at} (${eta.hold.minutes} min). Expected ${keep.eta} vs close ${keep.closeAt}.`
+    : cur?.late ? `Expected ${keep.eta}, after the store closes at ${keep.closeAt}.`
+    : cur?.lateRisk ? `Expected ${keep.eta}, close to the ${keep.closeAt} close.`
+    : null;
   const out = [];
   for (const v of net.vehicles.values()) {
     if (v.id === from.vehicle_id || v.depot !== ot.depot || v.status !== 'available' || (needReefer && v.temp !== 'reefer') || (ot.vanOnly && v.type !== 'van')) continue;
-    const r = await simulateMove(pool, net, date, fromTripId, outletId, { vehicleId: v.id }, at);
-    out.push({ vehicleId: v.id, type: v.type, temp: v.temp, driverName: v.driverName, trip: r.tp.trip, newTrip: !!r.newTrip, depart: r.tp.depart, eta: r.eta, ok: r.errors.length === 0, problem: r.errors[0]?.title ?? null });
+    try {
+      const r = await simulateMove(pool, net, date, fromTripId, outletId, { vehicleId: v.id }, at);
+      out.push({ vehicleId: v.id, type: v.type, temp: v.temp, driverName: v.driverName, trip: r.tp.trip, newTrip: !!r.newTrip, depart: r.tp.depart, eta: r.eta, ok: r.errors.length === 0 && (!r.target || !['in_progress', 'completed'].includes(r.target.status)), problem: r.errors[0]?.title ?? (r.target && ['in_progress', 'completed'].includes(r.target.status) ? 'Already on the road' : null) });
+    } catch { /* vehicle cannot be simulated (no free trip) */ }
   }
-  return out.sort((a, b) => Number(b.ok) - Number(a.ok) || (a.eta ?? '99').localeCompare(b.eta ?? '99'));
+  out.sort((a, b) => Number(b.ok) - Number(a.ok) || (a.eta ?? '99').localeCompare(b.eta ?? '99'));
+  return { keep, why, recommendMove: !!why && !cur?.done && (keep.late || keep.lateRisk) && out.some(o => o.ok && (o.eta ?? '99') < (keep.eta ?? '99')), options: out };
 }
 
 /** During the day: move a stop to another vehicle without re-planning (e.g. a driver is out of signal). */
@@ -265,9 +314,14 @@ export async function moveStopLive(date: string, userId: number, fromTripId: num
     const net = await loadNetwork(c);
     const from = await one<any>(`SELECT * FROM trips WHERE id = $1`, [fromTripId], c);
     if (!from) throw notFound('Trip not found.');
+    if (['completed', 'cancelled'].includes(from.status)) throw conflict(`This trip is ${from.status}.`);
+    if (to.vehicleId === from.vehicle_id) throw bad('Pick a different vehicle.');
+    const done = await one(`SELECT 1 FROM stop_events WHERE trip_id = $1 AND outlet_id = $2 AND type = 'delivered'`, [fromTripId, outletId], c);
+    if (done) throw conflict(`${from.vehicle_id} already recorded ${outletId} as delivered.`);
     const at = nowSync();
     const sim = await simulateMove(c, net, date, fromTripId, outletId, to, at);
     if (sim.errors.length) throw conflict(`${to.vehicleId} cannot take ${outletId}: ${sim.errors[0].title}.`, sim.errors);
+    if (sim.target && ['in_progress', 'completed'].includes(sim.target.status)) throw conflict(`${to.vehicleId} Trip ${sim.target.trip} is already on the road — its goods cannot be added.`);
     let targetId: number;
     if (sim.target) targetId = sim.target.id;
     else {
@@ -283,6 +337,10 @@ export async function moveStopLive(date: string, userId: number, fromTripId: num
     await notify(c, `vehicle:${from.vehicle_id}`, 'stop_moved', `${outletId} moved to ${to.vehicleId}`, `The dispatcher moved this stop at ${hhmm}. ${reason}`, { tone: 'amber', link: '/r' });
     await notify(c, `vehicle:${to.vehicleId}`, 'stop_added', `${outletId} added to your Trip ${sim.tp.trip}`, `${reason} Estimated arrival ${sim.eta}.`, { tone: 'amber', link: '/r' });
     await notify(c, `outlet:${outletId}`, 'eta', `Your delivery now comes on ${to.vehicleId}`, `Estimated arrival ${sim.eta}, inside your window.`, { tone: 'blue', link: '/s/track' });
+    // the goods for the moved stop leave from the depot on the new vehicle: tell the loaders
+    if (sim.target && sim.target.status === 'released') await c.query(`UPDATE trips SET status = 'loading' WHERE id = $1`, [targetId]);
+    const depot = net.vehicles.get(to.vehicleId)!.depot;
+    await notify(c, `depot:${depot}`, 'plan_changed', `Load ${outletId} on ${to.vehicleId} Trip ${sim.tp.trip}`, `Moved from ${from.vehicle_id}: ${reason} Pick ${ids.join(', ')} from depot stock. Departs ${sim.tp.depart}.`, { tone: 'amber', link: `/l/trip/${targetId}` });
     await audit(c, userId, 'trip.move_stop', `trip:${fromTripId}`, { outletId, to: targetId, reason });
     return { toTripId: targetId, eta: sim.eta };
   });

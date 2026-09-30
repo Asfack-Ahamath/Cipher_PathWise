@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KanbanSquare, ChevronDown, Package, AlertTriangle, XCircle, Snowflake, Search, Truck, Wand2, RotateCcw, X, CheckCircle2, Send, Clock, ShieldCheck, ListChecks, Loader2, MoreVertical } from 'lucide-react';
+import { KanbanSquare, ChevronDown, Package, AlertTriangle, XCircle, Snowflake, Search, Truck, Wand2, RotateCcw, X, CheckCircle2, Send, Clock, ShieldCheck, ListChecks, Loader2, MoreVertical, History } from 'lucide-react';
 import CapacityBar from '../../components/CapacityBar';
 import { TempTag, OutletBadges, BRAND_COLOR } from '../../components/tags';
 import { Toolbar, Button, Callout, Segmented, Pill, Modal, Count, inputCls, Overline, IconChip, HUE, cx, Field } from '../../components/ds';
 import { ErrorState, Loading, Status, useAct, useApi, useReference, useToast, fmt } from '../../components/common';
 import { del, post, ApiError } from '../../lib/api';
-import { hhmm } from '../../lib/clock';
+import { dayLabel, hhmm } from '../../lib/clock';
 import { useDepot } from './DispatcherApp';
 
 const RULES = ['Weight and volume per trip', 'Chilled goods on reefers only', 'Van-only outlets on vans only', 'Home depot only', 'One brand and one district per trip', 'At most 2 trips per vehicle', 'Fresh ≤ 270 min per vehicle (03:30–08:00)', 'Style + Tech ≤ 480 min per vehicle', 'Delivery windows (mall windows for mall outlets)', 'Weekly fuel quota', 'No vehicle in the workshop'];
@@ -38,6 +38,7 @@ export default function PlanBoard() {
   const [search, setSearch] = useState('');
   const [confirm, setConfirm] = useState(false);
   const [published, setPublished] = useState<any>(null);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const [showVal, setShowVal] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [deferFor, setDeferFor] = useState<string[] | null>(null);
@@ -138,6 +139,7 @@ export default function PlanBoard() {
         actions={<>
           {v.mode === 'draft' && <Button icon={<RotateCcw size={15} />} disabled={discard.isPending} onClick={() => discard.mutate()}>{v.published ? 'Discard changes' : 'Discard draft'}</Button>}
           <Button icon={auto.isPending ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} className="!border-teal-600 !text-teal-800" disabled={auto.isPending} onClick={() => auto.mutate()} data-testid="auto-plan">Auto-plan</Button>
+          <Button icon={<History size={15} />} onClick={() => setVersionsOpen(true)}>Versions</Button>
           <Button className="2xl:hidden" icon={<ListChecks size={15} />} onClick={() => setShowVal(true)}>Validation {errors > 0 && <Count n={errors} tone="bad" />}</Button>
           <Button variant="primary" disabled={!canPublish} onClick={() => setConfirm(true)} title={canPublish ? undefined : v.mode !== 'draft' ? 'Nothing new to publish' : `Resolve ${errors} violation${errors === 1 ? '' : 's'} first`} data-testid="publish">Publish plan</Button>
         </>}>
@@ -293,6 +295,7 @@ export default function PlanBoard() {
 
       {deferFor && <DeferDialog orderId={deferFor.join(' + ')} reasons={ref.data?.reasons ?? {}} onClose={() => setDeferFor(null)} onDefer={(reason, why) => { move.mutate({ orderIds: deferFor, target: null, reason: { reason, why } }); setDeferFor(null); }} />}
 
+      {versionsOpen && date && <Versions date={date} onClose={() => setVersionsOpen(false)} />}
       {confirm && (
         <Modal title={published ? 'Plan published' : `Publish plan for ${v.dateLabel}`} onClose={() => { setConfirm(false); setPublished(null); }} width={540}>
           {!published ? (
@@ -352,5 +355,29 @@ function Gauge({ label, pct, text, hue }: { label: string; pct: number; text: st
       <span className="flex justify-between text-[11px]"><span className="text-slate-500">{label}</span><span className={cx('font-semibold tabular', over ? 'text-rose-600' : warn ? 'text-amber-700' : 'text-slate-800')}>{text}</span></span>
       <span className="block mt-1 h-1.5 rounded-full overflow-hidden" style={{ background: over ? HUE.rose.soft : h.soft }}><span className="block h-full rounded-full" style={{ width: `${Math.min(pct, 1) * 100}%`, background: over ? HUE.rose.to : warn ? HUE.amber.to : h.to }} /></span>
     </span>
+  );
+}
+
+/** Every version of the day's plan: who published it, what it contained, what changed for loaders and drivers. */
+function Versions({ date, onClose }: { date: string; onClose: () => void }) {
+  const q = useApi<any[]>(['plan-versions', date], `/plans/${date}/versions`);
+  return (
+    <Modal title="Plan versions" onClose={onClose} width={620}>
+      {q.isLoading ? <Loading /> : q.error ? <ErrorState error={q.error} retry={q.refetch} /> : (q.data ?? []).length === 0 ? <p className="text-[13px] text-slate-500">No versions yet. Auto-plan creates the first draft.</p> : (
+        <ol className="space-y-3 max-h-[60vh] overflow-y-auto">
+          {(q.data ?? []).map(p => (
+            <li key={p.id} className="rounded-lg border border-[#E4E7EC] px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[14px] font-semibold text-slate-900">v{p.version} <span className={cx('ml-1.5 inline-flex h-5 px-2 items-center rounded-full text-[11px] font-semibold', p.status === 'published' ? 'bg-emerald-50 text-emerald-800' : p.status === 'draft' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600')}>{p.status === 'superseded' ? 'replaced' : p.status}</span></span>
+                <span className="text-[12px] text-slate-500">{p.publishedAt ? `Published ${dayLabel(p.publishedAt)} ${hhmm(p.publishedAt)} by ${p.publishedBy ?? '—'}` : `Started ${hhmm(p.createdAt)} by ${p.createdBy ?? '—'} · ${p.source}`}</span>
+              </div>
+              {p.stats?.trips != null && <div className="mt-1 text-[12px] text-slate-600 tabular">{p.stats.trips} trips · {p.stats.vehicles} vehicles · {p.stats.orders} orders · {fmt(p.stats.kg)} kg · {p.stats.deferred} deferred{p.stats.warnings ? ` · ${p.stats.warnings} warnings` : ''}</div>}
+              {p.status === 'draft' && <div className="mt-1 text-[12px] text-slate-600">{p.trips} trips in the draft · not visible to anyone yet</div>}
+              {p.changes?.length > 0 && <ul className="mt-2 space-y-1 text-[12px] text-slate-700">{p.changes.map((c: any, i: number) => <li key={i}><b>{c.vehicleId} Trip {c.trip}</b>{c.cancelled ? ' cancelled' : ''}{c.added?.length ? ` · added ${c.added.join(', ')}` : ''}{c.removed?.length && !c.cancelled ? ` · removed ${c.removed.join(', ')}` : ''}</li>)}</ul>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </Modal>
   );
 }

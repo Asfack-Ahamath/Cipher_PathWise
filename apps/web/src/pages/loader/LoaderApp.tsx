@@ -1,15 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { CheckCircle2, Lock, Snowflake, Package, AlertTriangle, Flag, Truck, Wrench, RotateCcw, Hourglass, ChevronRight, Minus, Plus, ArrowDownToLine, Info } from 'lucide-react';
+import { CheckCircle2, Lock, Snowflake, Package, AlertTriangle, Flag, Truck, Wrench, RotateCcw, Hourglass, ChevronRight, Minus, Plus, ArrowDownToLine, Info, Scale, TabletSmartphone } from 'lucide-react';
 import { FieldHeader, BigButton } from '../../components/FieldShell';
 import { Callout, Modal, Field, inputCls, Segmented, cx } from '../../components/ds';
 import { ErrorState, Loading, Status, useAct, useApi, useToast, fmt } from '../../components/common';
 import { OutletBadges, TempTag } from '../../components/tags';
-import { post } from '../../lib/api';
+import { ApiError, del, post } from '../../lib/api';
+import { useLiveUpdates } from '../../lib/live';
 import { useAuth } from '../../lib/auth';
 import { hhmm, useNow } from '../../lib/clock';
 
 export default function LoaderApp() {
+  useLiveUpdates();
   return (
     <div className="min-h-[100dvh] bg-[#F4F6FA] flex justify-center">
       <div className="w-full max-w-[860px] min-h-[100dvh] bg-white flex flex-col shadow-[0_0_0_1px_#E6E9F0]">
@@ -30,7 +32,8 @@ function Queue() {
   const q = useApi<any>(['loader-queue'], '/loader/queue', { refetchInterval: 10_000 });
   const d = q.data;
   const tone = (t: any) => t.status === 'released' ? '#15803D' : t.status === 'blocked' ? '#DC2626' : t.changed ? '#B45309' : t.status === 'loading' ? '#6D28D9' : t.status === 'in_progress' || t.status === 'completed' ? '#64748B' : '#475569';
-  const label = (t: any) => t.status === 'released' ? 'Released' : t.status === 'blocked' ? 'Blocked · fault' : t.changed ? 'Plan changed' : t.flagged ? `${t.flagged} flagged` : t.status === 'loading' ? `${t.loaded}/${t.lines} loaded` : t.status === 'in_progress' ? 'On the road' : t.status === 'completed' ? 'Back' : 'Not started';
+  const waiting = (t: any) => t.trip > 1 && (d?.trips ?? []).some((x: any) => x.vehicleId === t.vehicleId && x.trip === t.trip - 1 && x.status !== 'completed');
+  const label = (t: any) => waiting(t) && !['released', 'in_progress', 'completed'].includes(t.status) ? `Truck on Trip ${t.trip - 1}` : t.status === 'released' ? 'Released' : t.status === 'blocked' ? 'Blocked · fault' : t.changed ? 'Plan changed' : t.flagged ? `${t.flagged} flagged` : t.status === 'loading' ? `${t.loaded}/${t.lines} loaded` : t.status === 'in_progress' ? 'On the road' : t.status === 'completed' ? 'Back' : 'Not started';
   const trip1 = (d?.trips ?? []).filter((t: any) => t.trip === 1);
   const trip2 = (d?.trips ?? []).filter((t: any) => t.trip !== 1);
   return (
@@ -72,7 +75,9 @@ function TripLoad() {
   const tripId = Number(id);
   const toast = useToast();
   const q = useApi<any>(['loader-trip', tripId], `/loader/trips/${tripId}`, { refetchInterval: 5_000 });
+  const claim = useClaim(tripId, q.data && !['released', 'in_progress', 'completed', 'cancelled'].includes(q.data.status));
   const [flag, setFlag] = useState<any>(null);
+  const [size, setSize] = useState<any>(null);
   const [fault, setFault] = useState(false);
   const inv = ['loader-trip', 'loader-queue'];
   const setLine = useAct((b: { orderId: string; state: 'loaded' | 'pending' }) => post(`/loader/trips/${tripId}/lines/${b.orderId}`, { state: b.state }), { invalidate: inv });
@@ -84,12 +89,16 @@ function TripLoad() {
   const reversed = [...t.stops].reverse();
   const lines = t.stops.flatMap((s: any) => s.lines);
   const done = lines.filter((l: any) => l.loadStatus !== 'pending').length;
-  const loadedKg = lines.reduce((a: number, l: any) => a + (l.loadStatus === 'pending' ? 0 : l.kg * ((l.loadedUnits ?? l.units) / Math.max(1, l.units))), 0);
-  const loadedM3 = lines.reduce((a: number, l: any) => a + (l.loadStatus === 'pending' ? 0 : l.m3 * ((l.loadedUnits ?? l.units) / Math.max(1, l.units))), 0);
-  const openEx = t.exceptions.filter((e: any) => e.status === 'open' && ['dock_shortfall', 'vehicle_fault'].includes(e.type));
-  const decided = t.exceptions.filter((e: any) => e.status === 'resolved' && ['dock_shortfall', 'vehicle_fault'].includes(e.type));
-  const locked = ['released', 'in_progress', 'completed', 'cancelled'].includes(t.status);
-  const blockers = [done < lines.length && `${lines.length - done} line${lines.length - done > 1 ? 's' : ''} still to load`, openEx.length > 0 && 'Waiting for the dispatcher’s decision', t.changedAt && 'Acknowledge the plan change first'].filter(Boolean) as string[];
+  const kgOf = (l: any) => l.actualKg ?? l.kg, m3Of = (l: any) => l.actualM3 ?? l.m3;
+  const loadedKg = lines.reduce((a: number, l: any) => a + (l.loadStatus === 'pending' ? 0 : kgOf(l) * ((l.loadedUnits ?? l.units) / Math.max(1, l.units))), 0);
+  const loadedM3 = lines.reduce((a: number, l: any) => a + (l.loadStatus === 'pending' ? 0 : m3Of(l) * ((l.loadedUnits ?? l.units) / Math.max(1, l.units))), 0);
+  const BLOCKING = (e: any) => ['dock_shortfall', 'vehicle_fault'].includes(e.type) || e.type === 'size_divergence';
+  const openEx = t.exceptions.filter((e: any) => e.status === 'open' && BLOCKING(e));
+  const decided = t.exceptions.filter((e: any) => e.status === 'resolved' && BLOCKING(e));
+  const waitingForTruck = t.previousTrip && t.previousTrip.status !== 'completed';
+  const otherTablet = claim.holder && !claim.mine;
+  const locked = ['released', 'in_progress', 'completed', 'cancelled'].includes(t.status) || waitingForTruck || otherTablet;
+  const blockers = [waitingForTruck && `The truck is still on Trip ${t.previousTrip.trip}`, otherTablet && `${claim.holder} is loading this trip on another tablet`, done < lines.length && `${lines.length - done} line${lines.length - done > 1 ? 's' : ''} still to load`, openEx.some((e: any) => e.type !== 'size_divergence' || e.severity === 'high') && 'Waiting for the dispatcher’s decision', t.changedAt && 'Acknowledge the plan change first'].filter(Boolean) as string[];
   const change = t.changeNote;
   return (
     <>
@@ -101,6 +110,8 @@ function TripLoad() {
           <HeadBar label="Lines" cur={done} total={lines.length} unit="" />
         </div>
       </FieldHeader>
+      {waitingForTruck && <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 text-[13px] text-slate-800 flex items-start gap-2.5"><Hourglass size={16} className="text-slate-500 mt-0.5 flex-shrink-0" /><div><div className="font-bold">{t.vehicleId} is still out on Trip {t.previousTrip.trip}</div>You can stage the goods now. Ticking lines and release open when the driver closes Trip {t.previousTrip.trip} — you get a notification.</div></div>}
+      {otherTablet && <div className="px-4 py-3 bg-sky-50 border-b border-sky-200 text-[13px] text-sky-900 flex items-start gap-2.5"><TabletSmartphone size={16} className="text-sky-600 mt-0.5 flex-shrink-0" /><div className="flex-1"><div className="font-bold">{claim.holder} is loading this trip on another tablet</div>Two people ticking the same list leads to mistakes. Take over only if they have stopped.</div><button onClick={() => claim.takeOver()} className="h-9 px-3 rounded-lg bg-sky-700 text-white text-[13px] font-bold flex-shrink-0">Take over</button></div>}
       {t.swappedFrom && <div className="px-4 py-2.5 bg-violet-50 border-b border-violet-200 text-[13px] text-violet-900 flex items-center gap-2"><RotateCcw size={15} />Vehicle swapped: {t.swappedFrom} → {t.vehicleId}. Move every line across and tick it again.</div>}
       {t.changedAt && !locked && (
         <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 flex items-start gap-2.5">
@@ -140,8 +151,10 @@ function TripLoad() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap"><span className="text-[14px] font-bold text-slate-900">{l.description ?? (l.temp === 'chilled' ? 'Chilled crates' : 'Ambient cartons')}</span><TempTag temp={l.temp} /></div>
                       <div className="text-[12px] text-slate-500 tabular mt-0.5">{l.orderId} · {flagged ? <b className="text-orange-700">{l.loadedUnits} of {l.units} units</b> : `${l.units} units`} · {fmt(l.kg)} kg · {fmt(l.m3, 1)} m³</div>
+                      {l.actualKg && <div className="text-[12px] text-violet-800 mt-0.5">Measured {fmt(l.actualKg)} kg · {fmt(l.actualM3, 1)} m³</div>}
                       {flagged && l.flagNote && <div className="text-[12px] text-orange-800 mt-0.5">{l.flagReason}: {l.flagNote}</div>}
                     </div>
+                    {!locked && <button onClick={() => setSize(l)} aria-label={`Report real size of ${l.orderId}`} title="Bigger or heavier than ordered?" className={cx('h-11 w-11 rounded-lg ring-1 flex items-center justify-center', l.actualKg ? 'text-violet-700 ring-violet-300 bg-violet-50' : 'text-slate-500 ring-slate-200 hover:bg-slate-50')}><Scale size={15} /></button>}
                     {!locked && !flagged && <button onClick={() => setFlag({ ...l, reason: 'missing', loadedUnits: Math.max(0, l.units - 1), item: '', note: '' })} className="h-11 px-3 rounded-lg text-[13px] font-semibold text-orange-700 ring-1 ring-orange-200 hover:bg-orange-50 flex items-center gap-1.5"><Flag size={14} />Flag</button>}
                   </div>
                 );
@@ -154,8 +167,8 @@ function TripLoad() {
       </div>
 
       <div className="flex-shrink-0 border-t border-[#E4E7EC] bg-white p-4 safe-bottom space-y-2">
-        {locked ? (
-          <div className="rounded-xl bg-emerald-50 text-emerald-900 px-4 py-3 text-[14px] font-semibold flex items-center gap-2"><CheckCircle2 size={18} className="text-emerald-600" />Released {t.releasedAt ? hhmm(t.releasedAt) : ''} · the driver can start</div>
+        {['released', 'in_progress', 'completed', 'cancelled'].includes(t.status) ? (
+          <div className="rounded-xl bg-emerald-50 text-emerald-900 px-4 py-3 text-[14px] font-semibold flex items-center gap-2"><CheckCircle2 size={18} className="text-emerald-600" />{t.status === 'cancelled' ? 'This trip was cancelled in the new plan' : `Released ${t.releasedAt ? hhmm(t.releasedAt) : ''} · the driver can start`}</div>
         ) : <>
           {blockers.length > 0 && <div className="text-[12px] text-slate-500 flex items-start gap-1.5"><Lock size={12} className="mt-0.5" />{blockers.join(' · ')}</div>}
           <BigButton tone="loader" icon={<Truck size={18} />} disabled={blockers.length > 0 || release.isPending} onClick={() => release.mutate()} data-testid="release">Release vehicle to driver</BigButton>
@@ -164,6 +177,7 @@ function TripLoad() {
 
       {flag && <FlagDialog line={flag} onClose={() => setFlag(null)} onSent={() => { setFlag(null); toast('info', 'Flag sent to the dispatcher'); q.refetch(); }} tripId={tripId} />}
       {fault && <FaultDialog tripId={tripId} onClose={() => setFault(false)} />}
+      {size && <SizeDialog line={size} tripId={tripId} onClose={() => setSize(null)} />}
     </>
   );
 }
@@ -219,6 +233,47 @@ function FaultDialog({ tripId, onClose }: { tripId: number; onClose: () => void 
         <Field label="Note (optional)"><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} /></Field>
         {severity === 'blocking' && <Callout tone="warning">The trip is frozen until the dispatcher swaps the vehicle. You then move every line to the new vehicle.</Callout>}
         <div className="flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="danger" disabled={send.isPending} onClick={() => send.mutate()} icon={<Wrench size={16} />}>Send</BigButton></div>
+      </div>
+    </Modal>
+  );
+}
+
+/** One loader per trip: claim it on open, keep it with a heartbeat, give it back on leaving. */
+function useClaim(tripId: number, active: boolean) {
+  const [state, setState] = useState<{ holder: string | null; mine: boolean }>({ holder: null, mine: true });
+  const toast = useToast();
+  const device = useRef(`${navigator.platform || 'Tablet'} · ${Math.random().toString(36).slice(2, 6)}`);
+  const claim = async (takeOver = false) => {
+    try { const r = await post<any>(`/loader/trips/${tripId}/claim`, { device: device.current, takeOver }); setState({ holder: r.holder, mine: true }); if (takeOver) toast('success', 'You are loading this trip now'); }
+    catch (e) { if (e instanceof ApiError && e.code === 'TRIP_CLAIMED') setState({ holder: e.body?.details?.holder ?? 'Someone', mine: false }); }
+  };
+  useEffect(() => {
+    if (!active) return;
+    void claim();
+    const id = setInterval(() => void claim(), 60_000);
+    return () => { clearInterval(id); void del(`/loader/trips/${tripId}/claim`).catch(() => undefined); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId, active]);
+  return { ...state, takeOver: () => claim(true) };
+}
+
+function SizeDialog({ line, tripId, onClose }: { line: any; tripId: number; onClose: () => void }) {
+  const [kg, setKg] = useState(String(line.actualKg ?? line.kg));
+  const [m3, setM3] = useState(String(line.actualM3 ?? line.m3));
+  const [note, setNote] = useState('');
+  const send = useAct(() => post(`/loader/trips/${tripId}/lines/${line.orderId}/size`, { actualKg: Number(kg), actualM3: Number(m3), note: note || undefined }), { invalidate: ['loader-trip', 'loader-queue'], success: 'Size recorded — the dispatcher is told if the truck no longer fits', onDone: onClose });
+  const ok = Number(kg) > 0 && Number(m3) > 0;
+  return (
+    <Modal title={`Real size of ${line.orderId}`} onClose={onClose} width={440}>
+      <div className="space-y-4">
+        <div className="text-[13px] text-slate-600">The order said {fmt(line.kg)} kg and {fmt(line.m3, 1)} m³. Enter what is actually on the dock.</div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Weight (kg)"><input className={inputCls} type="number" min={1} inputMode="decimal" value={kg} onChange={e => setKg(e.target.value)} /></Field>
+          <Field label="Volume (m³)"><input className={inputCls} type="number" min={0.1} step={0.1} inputMode="decimal" value={m3} onChange={e => setM3(e.target.value)} /></Field>
+        </div>
+        <Field label="Note (optional)"><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Pallets double-stacked" /></Field>
+        <Callout tone="info">Small differences are just recorded. If the truck goes over its weight or volume limit, release waits for the dispatcher.</Callout>
+        <div className="flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="loader" disabled={!ok || send.isPending} onClick={() => send.mutate()} icon={<Scale size={16} />}>Save size</BigButton></div>
       </div>
     </Modal>
   );
