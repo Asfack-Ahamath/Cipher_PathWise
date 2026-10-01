@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bell, LogOut, X } from 'lucide-react';
+import { ArrowLeft, Bell, KeyRound, LogOut, X } from 'lucide-react';
 import { ROLE_GRAD, cx } from './ds';
 import { useAct, useApi } from './common';
 import { post } from '../lib/api';
@@ -30,10 +30,12 @@ export function FieldHeader({ role, title, subtitle, back, right, children, offl
 
 function SignOut() {
   const { signOut } = useAuth();
+  const nav = useNavigate();
   const [confirm, setConfirm] = useState(false);
   return confirm ? (
     <span className="flex items-center gap-1">
-      <button onClick={signOut} className="h-8 px-2.5 rounded-full bg-white text-slate-900 text-[12px] font-semibold">Sign out</button>
+      <button onClick={() => nav('/account')} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10" aria-label="Account and password" title="Account and password"><KeyRound size={16} /></button>
+      <button onClick={() => void signOut()} className="h-8 px-2.5 rounded-full bg-white text-slate-900 text-[12px] font-semibold">Sign out</button>
       <button onClick={() => setConfirm(false)} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/10" aria-label="Cancel"><X size={16} /></button>
     </span>
   ) : <button onClick={() => setConfirm(true)} className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10" aria-label="Sign out" title="Sign out"><LogOut size={17} /></button>;

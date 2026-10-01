@@ -1,6 +1,12 @@
 # Data model
 
-PostgreSQL 16. Schema in [`apps/api/src/migrations/001_init.sql`](../apps/api/src/migrations/001_init.sql), applied by the API on start (`schema_migrations` tracks what ran).
+PostgreSQL 16 (local, docker compose) or Supabase Postgres. Three versioned migrations, applied by the API on start or with `npm run db:migrate` (`schema_migrations` tracks what ran):
+
+| Migration | Adds |
+|---|---|
+| [`001_init.sql`](../apps/api/src/migrations/001_init.sql) | Reference data, orders, plans, trips, loading, events, proofs, receipts, exceptions, notifications, audit |
+| [`002_production.sql`](../apps/api/src/migrations/002_production.sql) | Admin role and account security, traffic / road-condition / weekly-demand tables, attachments, loading sessions, plan version stats, order edits and cancellation, check constraints, indexes, `updated_at` triggers, typed settings |
+| [`003_security.sql`](../apps/api/src/migrations/003_security.sql) | Row-level security on every table; on Supabase: no `anon` access, read-only policies per role via `pw_me()` / `pw_role()` |
 
 ```mermaid
 erDiagram
@@ -29,7 +35,12 @@ erDiagram
   DISTRICT_TRAVEL { text depot PK text district PK int out_min int inter_min numeric out_km numeric inter_km text road_class }
   SERVICE_ALLOWANCE { text brand PK text dock PK int minutes }
   CALENDAR { date date PK bool is_operating text holiday bool is_payday numeric festival_ramp bool monsoon text iso_week }
-  USERS { serial id PK text email text role "dispatcher|loader|driver|store_manager" text depot text outlet_id FK text vehicle_id FK text pin_hash }
+  USERS { serial id PK text email UK text role "admin|dispatcher|loader|driver|store_manager" text depot text outlet_id FK text vehicle_id FK text password_hash text pin_hash uuid auth_user_id UK bool is_active bool must_change_password int failed_logins timestamptz locked_until int token_version }
+  TRAFFIC_SPEED { text district PK int hour PK bool monsoon PK numeric speed_index }
+  ROAD_CONDITIONS { text district PK date date PK numeric disruption_index }
+  DEMAND_WEEKLY { text depot PK text brand PK int iso_year PK int iso_week PK text source PK "history|forecast_import" numeric total_m3 numeric chilled_m3 }
+  ATTACHMENTS { uuid id PK text kind "pod_photo|pod_signature|receipt_photo|problem_photo" text storage "db|supabase" text path text data int bytes text outlet_id FK int trip_id FK }
+  LOADING_SESSIONS { int trip_id PK int user_id FK text device timestamptz heartbeat_at }
   ORDERS { text id PK "ORD0093171" text outlet_id FK date delivery_date text temp "ambient|chilled" int units numeric kg numeric m3 jsonb lines text status bool after_cutoff bool deferred_yesterday int days_since_served text parent_order_id FK }
   PLANS { serial id PK date plan_date int version text status "draft|published|superseded" text source jsonb trips jsonb deferrals }
   TRIPS { serial id PK date plan_date text vehicle_id FK int trip_no text depart text status "planned|loading|released|in_progress|completed|blocked|cancelled" text swapped_from timestamptz changed_at int ack_version }
@@ -37,7 +48,7 @@ erDiagram
   STOP_MOVES { serial id PK text order_id FK text outlet_id int from_trip_id FK int to_trip_id FK timestamptz moved_at text reason }
   DEFERRALS { serial id PK text order_id FK date from_date date to_date text reason text kind "forced|chosen" text why int units bool escalated timestamptz notified_at timestamptz acknowledged_at }
   STOP_EVENTS { serial id PK uuid client_event_id UK int trip_id FK text outlet_id text type jsonb payload timestamptz device_time timestamptz received_at bool conflict }
-  PODS { serial id PK int event_id FK text receiver text photo text signature timestamptz device_time }
+  PODS { serial id PK int event_id FK text receiver uuid photo_id FK uuid signature_id FK jsonb delivered_units timestamptz device_time }
   RECEIPTS { serial id PK text order_id FK jsonb lines text status "ok|issue" timestamptz confirmed_at }
   EXCEPTIONS { serial id PK text type text status "open|resolved" text severity int trip_id FK text order_id FK jsonb detail text decision }
   NOTIFICATIONS { serial id PK text audience "role:|depot:|outlet:|vehicle:|user:" text kind text title text body text link }
@@ -49,17 +60,23 @@ erDiagram
 | Table | Holds | Notes |
 |---|---|---|
 | `outlets`, `vehicles`, `district_travel`, `service_allowance`, `calendar` | The five datasets | Loaded from `data/*.csv` on first start. `vehicles.status` and `fuel_used_l` change during operation. |
-| `users` | Seeded accounts | bcrypt password; loaders also have a hashed 4-digit dock PIN scoped to a depot. |
+| `users` | People and access | Role + scope (depot / outlet / vehicle, enforced by a check constraint). bcrypt password, or `auth_user_id` when Supabase Auth checks passwords. Loaders have a hashed dock PIN unique per depot. `token_version` ends sessions; `failed_logins` / `locked_until` lock after 5 misses. |
+| `traffic_speed`, `road_conditions` | Congestion by district/hour/monsoon and date-specific disruption | Turn free-flow travel times into expected arrival times. |
+| `demand_weekly` | Weekly m³ by depot and brand | `history` from the training data; `forecast_import` from the Datathon Task 2A file uploaded in Admin → Data. |
+| `attachments` | Photos and signatures | Bytes in the database (`storage=db`) or a path in the private Supabase bucket (`storage=supabase`). Served only through `/api/files/:id` after an access check. |
+| `loading_sessions` | Which tablet is loading a trip | One loader per trip; heartbeat and take-over. |
 | `orders` | Every store order | `after_cutoff` orders roll to the next operating day. `deferred_yesterday` and `days_since_served` drive planning priority. A shortfall or failed delivery creates a child order (`parent_order_id`) for the next run. |
 | `plans` | Drafts and published versions | Trips and proposed deferrals stored as JSON while drafting; one `published` row per day, older ones `superseded`. |
 | `trips`, `trip_orders` | The live plan | Stable IDs across republishes. `trip_orders` is also the load list (`load_status`, `loaded_units`, `flag_reason`). |
 | `stop_moves` | Stops moved between live trips | Kept so a late-syncing phone can be detected as a conflict instead of overwriting the move. |
 | `deferrals` | Orders moved to another day | `reason` is one of 11 codes with a plain-language store text; `kind` = **forced** (no vehicle could take it) or **chosen** (capacity went to higher-priority orders). `units` set when only part of an order moves. |
 | `stop_events` | Everything the driver's phone recorded | Append-only. `client_event_id` makes sync idempotent. `device_time` is when it happened; `received_at` is when it arrived. |
-| `pods` | Proof of delivery | Receiver name, photo and signature (data URLs, compressed on the phone). |
+| `pods` | Proof of delivery | Receiver name, photo and signature (attachments), and the driver's count per order (`delivered_units`) so the store's count never overwrites it. |
 | `receipts` | Store's line-by-line check | Any line not OK raises a `receipt_issue` exception. |
-| `exceptions` | Things that need a dispatcher decision | `dock_shortfall`, `vehicle_fault`, `non_delivery`, `sync_conflict`, `receipt_issue`, `road_problem`. The decision and who made it are stored. |
+| `exceptions` | Things that need a dispatcher decision | `dock_shortfall`, `vehicle_fault`, `non_delivery`, `sync_conflict`, `receipt_issue`, `road_problem` (with `delayMin`), `size_divergence`. The decision and who made it are stored. |
 | `notifications`, `notification_reads` | In-app messages | Addressed to an audience, read state per user. |
 | `audit_log` | Who did what, when | Every write. |
 | `vehicle_presence` | Last contact per vehicle | Drives "no signal" on live tracking and the store's estimated ETA. |
-| `settings` | `clock`, `plan_date` | The business clock and the active delivery day. |
+| `settings` | `clock`, `plan_date`, `rules`, `operations` | The business clock, the active delivery day, the planning rules and operating settings (validated; edited in Admin → Settings). |
+
+Every table has row-level security enabled. Constraints guard formats and ranges (HH:MM times, windows that open before they close, positive capacities, one draft and one published plan per day, trip numbers 1–3, attachment size ≤ 5 MB).

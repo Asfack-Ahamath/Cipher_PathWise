@@ -4,8 +4,11 @@ import { config } from './config.js';
 pg.types.setTypeParser(1700, v => (v === null ? null : Number(v))); // numeric → number
 pg.types.setTypeParser(1082, v => v);                                // date → 'YYYY-MM-DD'
 
-// managed databases (Neon, Supabase, Railway public URLs) need TLS: set DATABASE_SSL=true
-export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10, ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined });
+// Managed Postgres (Supabase, Neon) needs TLS: set DATABASE_SSL=true. We drop any sslmode in the URL so
+// the explicit TLS settings below always apply (Supabase's pooler certificate is not in Node's CA store).
+const url = config.databaseSsl ? config.databaseUrl.replace(/([?&])sslmode=[^&]*&?/, '$1').replace(/[?&]$/, '') : config.databaseUrl;
+export const pool = new pg.Pool({ connectionString: url, max: Number(process.env.DATABASE_POOL_MAX ?? 10), idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl: config.databaseSsl ? { rejectUnauthorized: false } : undefined });
+pool.on('error', err => console.error('database pool error:', err.message));
 export type Db = pg.Pool | pg.PoolClient;
 
 export async function q<T = any>(sql: string, params: unknown[] = [], db: Db = pool): Promise<T[]> {

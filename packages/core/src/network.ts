@@ -27,12 +27,13 @@ export function outletPosition(o: Pick<Outlet, 'id' | 'district'>): [number, num
   return [c[0] + Math.sin(a) * r, c[1] + Math.cos(a) * r];
 }
 
-export function buildNetwork(input: { outlets: Outlet[]; vehicles: Vehicle[]; travel: TravelRow[]; allowance: Record<Brand, Record<Dock, number>>; rules?: Partial<PlanningRules> }): Network {
+export function buildNetwork(input: { outlets: Outlet[]; vehicles: Vehicle[]; travel: TravelRow[]; allowance: Record<Brand, Record<Dock, number>>; rules?: Partial<PlanningRules>; traffic?: Map<string, number>; roads?: Map<string, number> }): Network {
   return {
     outlets: new Map(input.outlets.map(o => [o.id, o])),
     vehicles: new Map(input.vehicles.map(v => [v.id, v])),
     travel: new Map(input.travel.map(t => [`${t.depot}|${t.district}`, t])),
     allowance: input.allowance,
     rules: { ...DEFAULT_RULES, ...(input.rules ?? {}) },
+    traffic: input.traffic, roads: input.roads,
   };
 }

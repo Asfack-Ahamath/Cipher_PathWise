@@ -1,8 +1,11 @@
 import type { Network, Order, PlanTrip, StopPlan, TripSchedule } from './types.js';
 import { parseWindow, toMin } from './time.js';
 
-/* Trip time follows the booklet formula: outbound + inter-stop × (stops − 1) + handling.
-   The clock also includes any wait when the vehicle reaches an outlet before its window opens. */
+/* Trip time follows the booklet's published planning standard (Task 2B, "Calculate trip time"):
+     trip_minutes = outbound + inter_stop × (orders − 1) + Σ handling per order
+   with no return leg (the budgets already allow for it) and no waiting.
+   The stop timeline (arrive / start / leave) is the physical schedule: orders for the same outlet
+   are one stop, a vehicle that arrives early waits for the window, and handling is per order. */
 export function stopOutlets(orderIds: string[], orders: Map<string, Order>): string[] {
   const ids: string[] = [];
   for (const id of orderIds) { const o = orders.get(id); if (o && !ids.includes(o.outletId)) ids.push(o.outletId); }
@@ -28,7 +31,8 @@ export function scheduleTrip(net: Network, trip: PlanTrip, orders: Map<string, O
     const openAt = Math.max(toMin(ot.open), mall ? mall[0] : 0);
     const closeAt = Math.min(toMin(ot.close), mall ? mall[1] : 24 * 60);
     const start = Math.max(arrive, openAt);
-    const allowance = net.allowance[ot.brand][ot.dock];
+    const nOrders = list.filter(x => x.outletId === oid).length;
+    const allowance = net.allowance[ot.brand][ot.dock] * nOrders;
     handling += allowance;
     const leave = start + allowance;
     clock = leave;
@@ -38,7 +42,7 @@ export function scheduleTrip(net: Network, trip: PlanTrip, orders: Map<string, O
       arrive, start, leave, waitMin: start - arrive, allowance, late, lateRisk: !late && closeAt - arrive <= net.rules.lateRiskSlackMin,
     };
   });
-  const tripMinutes = tr.outMin + tr.interMin * (outletIds.length - 1) + handling;
+  const tripMinutes = tr.outMin + tr.interMin * (list.length - 1) + handling;
   const km = tr.outKm * 2 + tr.interKm * (outletIds.length - 1);
   return {
     stops, tripMinutes, km, fuelL: km / v.kmPerL, returnAt: clock + tr.outMin,

@@ -1,5 +1,6 @@
-# docker compose up  →  database, migrations, seed data and the app on http://localhost:8080
-# Works with no .env file; copy .env.example to .env to change anything.
+# docker compose up  →  PostgreSQL, migrations, seed data and the app on http://localhost:8080
+# Works with no .env file (demo mode, local database, photos in the database).
+# To run against Supabase instead, see docs/supabase.md — only environment variables change.
 services:
   db:
     image: postgres:16-alpine
@@ -24,10 +25,23 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-pathwise}:${POSTGRES_PASSWORD:-pathwise}@db:5432/${POSTGRES_DB:-pathwise}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-at-least-32-chars}
+      DEMO_MODE: ${DEMO_MODE:-true}
       SEED_ON_START: ${SEED_ON_START:-true}
       DEMO_CLOCK_START: ${DEMO_CLOCK_START:-2026-04-30T02:30:00+05:30}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-PathWise@2026}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@pathwise.lk}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-db}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-pathwise-proofs}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "${APP_PORT:-8080}:8080"

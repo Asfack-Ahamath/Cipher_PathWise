@@ -3,14 +3,23 @@ import { audit, notify } from '../audit.js';
 import { dayLabel, minutesOfDay, nowSync } from '../clock.js';
 import { one, q, tx, type Db } from '../db.js';
 import { bad, conflict, notFound } from '../errors.js';
+import { z } from 'zod';
 import { nextOperatingDay } from './network.js';
 
+export const ResolveBody = z.object({
+  decision: z.enum(['send_partial', 'substitute', 'hold', 'swap', 'continue', 'return_to_depot', 'retry_today', 'keep_driver', 'keep_reassignment', 'redeliver', 'credit', 'acknowledge', 'accept', 'remove_line']),
+  note: z.string().trim().max(500).optional(),
+  vehicleId: z.string().trim().max(10).optional(),
+});
+
 export async function listExceptions(date: string) {
-  return q<any>(`SELECT e.id, e.type, e.status, e.severity, e.trip_id AS "tripId", e.order_id AS "orderId", e.outlet_id AS "outletId", e.title, e.detail,
+  const rows = await q<any>(`SELECT e.id, e.type, e.status, e.severity, e.trip_id AS "tripId", e.order_id AS "orderId", e.outlet_id AS "outletId", e.title, e.detail,
       e.raised_at AS "raisedAt", e.decision, e.decision_note AS "decisionNote", e.resolved_at AS "resolvedAt",
       u.name AS "raisedBy", u.role AS "raisedByRole", r.name AS "resolvedBy", t.vehicle_id AS "vehicleId", t.trip_no AS "tripNo", t.depart
     FROM exceptions e LEFT JOIN users u ON u.id = e.raised_by LEFT JOIN users r ON r.id = e.resolved_by LEFT JOIN trips t ON t.id = e.trip_id
-    WHERE e.plan_date = $1 OR e.status = 'open' ORDER BY (e.status = 'open') DESC, e.raised_at DESC`, [date]);
+    WHERE e.plan_date = $1 OR e.status = 'open' ORDER BY (e.status = 'open') DESC, e.raised_at DESC LIMIT 500`, [date]);
+  const url = (id?: string | null) => (id ? `/api/files/${id}` : null);
+  return rows.map(r => ({ ...r, photoUrl: url(r.detail?.photoId), photoUrls: (r.detail?.photoIds ?? []).map(url) }));
 }
 
 /** Split an order: the part that did not travel becomes a new order on the next run, with a deferral. */
@@ -26,14 +35,14 @@ async function deferRemainder(c: Db, orderId: string, units: number, reason: key
   return { id, next, escalated, outletId: o.outlet_id };
 }
 
-export async function resolve(id: number, userId: number, body: { decision: string; note?: string; vehicleId?: string }) {
+export async function resolve(id: number, userId: number, body: z.infer<typeof ResolveBody>) {
   return tx(async c => {
     const e = await one<any>(`SELECT e.*, to_char(e.plan_date,'YYYY-MM-DD') AS d, t.vehicle_id, t.trip_no, t.depart FROM exceptions e LEFT JOIN trips t ON t.id = e.trip_id WHERE e.id = $1 FOR UPDATE OF e`, [id], c);
     if (!e) throw notFound('Exception not found.');
     if (e.status === 'resolved') throw conflict('Already decided.');
     const d = e.detail ?? {};
     const at = nowSync();
-    let summary = body.decision;
+    let summary: string = body.decision;
     switch (e.type) {
       case 'dock_shortfall': {
         if (body.decision === 'send_partial') {
@@ -116,7 +125,35 @@ export async function resolve(id: number, userId: number, body: { decision: stri
         } else throw bad('Unknown decision.');
         break;
       }
-      case 'road_problem': summary = body.decision === 'acknowledge' ? 'Acknowledged' : body.decision; break;
+      case 'road_problem': {
+        if (body.decision !== 'acknowledge') throw bad('Unknown decision.');
+        summary = 'Acknowledged';
+        if (e.vehicle_id) await notify(c, `vehicle:${e.vehicle_id}`, 'ack', 'The dispatcher saw your report', body.note ?? 'Carry on unless you hear otherwise.', { tone: 'blue', link: '/r' });
+        break;
+      }
+      case 'size_divergence': {
+        const depot = (await one<any>(`SELECT depot FROM vehicles WHERE id = $1`, [e.vehicle_id], c))?.depot;
+        if (body.decision === 'accept') {
+          if (d.overCapacity && !body.note) throw bad('Add a note: the truck is over capacity, say why it may still leave.');
+          summary = d.overCapacity ? 'Load anyway (dispatcher override)' : 'Accept the new size';
+          await c.query(`UPDATE exceptions SET detail = jsonb_set(detail, '{overCapacity}', 'false') WHERE id = $1`, [id]);
+        } else if (body.decision === 'remove_line') {
+          const tstat = await one<any>(`SELECT status FROM trips WHERE id = $1`, [e.trip_id], c);
+          if (['in_progress', 'completed'].includes(tstat?.status)) throw conflict('The truck has already left.');
+          const o = await one<any>(`SELECT *, to_char(delivery_date,'YYYY-MM-DD') AS dd FROM orders WHERE id = $1`, [e.order_id], c);
+          const next = await nextOperatingDay(o.dd, c);
+          await c.query(`UPDATE trip_orders SET load_status = 'removed', moved_at = $3 WHERE trip_id = $1 AND order_id = $2`, [e.trip_id, e.order_id, at]);
+          await c.query(`UPDATE orders SET status = 'deferred', delivery_date = $2, deferred_yesterday = true, days_since_served = days_since_served + 1, kg = $3, m3 = $4 WHERE id = $1`,
+            [e.order_id, next, d.actual?.kg ?? o.kg, d.actual?.m3 ?? o.m3]);
+          await c.query(`INSERT INTO deferrals (order_id, from_date, to_date, reason, kind, why, units, created_by, created_at, notified_at, escalated) VALUES ($1,$2,$3,$4,'forced',$5,NULL,$6,$7,$7,$8)`,
+            [e.order_id, o.dd, next, d.overCapacity ? 'capacity_volume' : 'other', `On the dock the order measured ${d.actual?.kg} kg / ${d.actual?.m3} m³ and did not fit on ${e.vehicle_id}.`, userId, at, !!o.deferred_yesterday]);
+          summary = `Take off the truck · deliver ${dayLabel(next)}`;
+          await notify(c, `outlet:${e.outlet_id}`, 'deferral', `Order ${e.order_id} moves to ${dayLabel(next)}`, `${REASONS.capacity_volume.store} It stays on order — no need to re-order.`, { tone: 'amber', link: '/s/deferrals' });
+        } else throw bad('Unknown decision.');
+        if (depot) await notify(c, `depot:${depot}`, 'decision', `Decision for ${e.vehicle_id} Trip ${e.trip_no}: ${summary}`, body.decision === 'remove_line' ? `Leave ${e.order_id} at the depot.` : 'Load it and release when ready.', { tone: 'violet', link: `/l/trip/${e.trip_id}` });
+        break;
+      }
+      default: throw bad('Unknown exception type.');
     }
     await c.query(`UPDATE exceptions SET status = 'resolved', decision = $2, decision_note = $3, resolved_by = $4, resolved_at = $5 WHERE id = $1`, [id, summary, body.note ?? null, userId, at]);
     await audit(c, userId, 'exception.resolve', `exception:${id}`, body);

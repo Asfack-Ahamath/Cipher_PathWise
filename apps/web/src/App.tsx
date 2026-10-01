@@ -9,12 +9,16 @@ const DispatcherApp = lazy(() => import('./pages/dispatcher/DispatcherApp'));
 const LoaderApp = lazy(() => import('./pages/loader/LoaderApp'));
 const DriverApp = lazy(() => import('./pages/driver/DriverApp'));
 const StoreApp = lazy(() => import('./pages/store/StoreApp'));
+const AdminApp = lazy(() => import('./pages/admin/AdminApp'));
+const Account = lazy(() => import('./pages/Account'));
 
-function Guard({ role, children }: { role: Role; children: ReactNode }) {
+/** Route guard: signed in, the right role, and no pending password change. */
+function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
   const { user } = useAuth();
   const loc = useLocation();
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname)}`} replace />;
-  if (user.role !== role) return <Navigate to={HOME[user.role]} replace />;
+  if (user.mustChangePassword) return <Navigate to="/account?required=1" replace />;
+  if (!roles.includes(user.role)) return <Navigate to={HOME[user.role]} replace />;
   return <Suspense fallback={<Loading />}>{children}</Suspense>;
 }
 
@@ -22,12 +26,14 @@ export default function App() {
   const { user } = useAuth();
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to={HOME[user.role]} replace /> : <SignIn />} />
-      <Route path="/d/*" element={<Guard role="dispatcher"><DispatcherApp /></Guard>} />
-      <Route path="/l/*" element={<Guard role="loader"><LoaderApp /></Guard>} />
-      <Route path="/r/*" element={<Guard role="driver"><DriverApp /></Guard>} />
-      <Route path="/s/*" element={<Guard role="store_manager"><StoreApp /></Guard>} />
-      <Route path="*" element={<Navigate to={user ? HOME[user.role] : '/login'} replace />} />
+      <Route path="/login" element={user && !user.mustChangePassword ? <Navigate to={HOME[user.role]} replace /> : <SignIn />} />
+      <Route path="/account" element={user ? <Suspense fallback={<Loading />}><Account /></Suspense> : <Navigate to="/login" replace />} />
+      <Route path="/a/*" element={<Guard roles={['admin']}><AdminApp /></Guard>} />
+      <Route path="/d/*" element={<Guard roles={['dispatcher', 'admin']}><DispatcherApp /></Guard>} />
+      <Route path="/l/*" element={<Guard roles={['loader']}><LoaderApp /></Guard>} />
+      <Route path="/r/*" element={<Guard roles={['driver']}><DriverApp /></Guard>} />
+      <Route path="/s/*" element={<Guard roles={['store_manager']}><StoreApp /></Guard>} />
+      <Route path="*" element={<Navigate to={user ? (user.mustChangePassword ? '/account?required=1' : HOME[user.role]) : '/login'} replace />} />
     </Routes>
   );
 }

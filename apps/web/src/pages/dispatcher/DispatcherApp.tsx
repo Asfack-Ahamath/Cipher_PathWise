@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ElementType } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ClipboardList, KanbanSquare, CalendarClock, MapPin, AlertTriangle, BarChart3, Route as RouteIcon, PanelLeftClose, PanelLeftOpen, LogOut, Bell, Clock, X, ChevronRight, RotateCcw, Menu } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, KanbanSquare, CalendarClock, MapPin, AlertTriangle, BarChart3, Route as RouteIcon, PanelLeftClose, PanelLeftOpen, LogOut, Bell, Clock, X, ChevronRight, RotateCcw, Menu, FlaskConical, Settings2, KeyRound } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Modal, Segmented, Field, inputCls, cx } from '../../components/ds';
 import { useAct, useApi, useToast } from '../../components/common';
@@ -14,6 +14,9 @@ import Deferrals from './Deferrals';
 import Tracking from './Tracking';
 import Exceptions from './Exceptions';
 import Forecast from './Forecast';
+import PeakDay from './PeakDay';
+import { useLiveUpdates } from '../../lib/live';
+import { LiveDot } from '../../components/common';
 
 export type DepotFilter = 'all' | 'Peliyagoda' | 'Kandy';
 const DepotCtx = createContext<DepotFilter>('all');
@@ -22,12 +25,13 @@ export const useDepot = () => useContext(DepotCtx);
 export default function DispatcherApp() {
   const [depot, setDepot] = useState<DepotFilter>('all');
   const [mobileNav, setMobileNav] = useState(false);
+  const live = useLiveUpdates();
   return (
     <DepotCtx.Provider value={depot}>
       <div className="h-[100dvh] flex bg-[#F4F6FA] overflow-hidden">
         <Sidebar mobileOpen={mobileNav} onClose={() => setMobileNav(false)} />
         <div className="flex-1 min-w-0 flex flex-col">
-          <TopNav depot={depot} setDepot={setDepot} onMenu={() => setMobileNav(true)} />
+          <TopNav depot={depot} setDepot={setDepot} onMenu={() => setMobileNav(true)} live={live} />
           <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <Routes>
               <Route index element={<Overview />} />
@@ -37,6 +41,7 @@ export default function DispatcherApp() {
               <Route path="tracking" element={<Tracking />} />
               <Route path="exceptions" element={<Exceptions />} />
               <Route path="forecast" element={<Forecast />} />
+              <Route path="peak-day" element={<PeakDay />} />
               <Route path="*" element={<Navigate to="/d" replace />} />
             </Routes>
           </main>
@@ -66,7 +71,8 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
       { to: '/d/tracking', label: 'Live tracking', icon: MapPin },
       { to: '/d/exceptions', label: 'Exceptions', icon: AlertTriangle, badge: openEx, tone: 'bad' },
     ] },
-    { label: 'Look ahead', items: [{ to: '/d/forecast', label: 'Capacity forecast', icon: BarChart3 }] },
+    { label: 'Look ahead', items: [{ to: '/d/forecast', label: 'Capacity forecast', icon: BarChart3 }, { to: '/d/peak-day', label: 'Peak-day lab', icon: FlaskConical }] },
+    ...(user?.role === 'admin' ? [{ label: 'Admin', items: [{ to: '/a', label: 'Administration', icon: Settings2 }] }] : []),
   ];
   const next = o?.nextDay;
   return (
@@ -122,9 +128,10 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
             <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[12px] font-semibold flex-shrink-0" style={{ background: 'linear-gradient(135deg,#818CF8,#4F46E5)' }}>{user?.name.split(' ').map(s => s[0]).join('')}</div>
             <div className={`${show} min-w-0 flex-1`}>
               <div className="text-[13px] font-semibold text-white truncate">{user?.name}</div>
-              <div className="text-[12px] text-slate-400">Dispatcher · both depots</div>
+              <div className="text-[12px] text-slate-400">{user?.role === 'admin' ? 'Administrator' : 'Dispatcher'} · both depots</div>
             </div>
-            <button onClick={signOut} className={`${expanded ? 'flex' : 'hidden'} text-slate-500 hover:text-white`} aria-label="Sign out" title="Sign out"><LogOut size={16} /></button>
+            <NavLink to="/account" className={`${expanded ? 'flex' : 'hidden'} text-slate-500 hover:text-white`} aria-label="Account and password" title="Account and password"><KeyRound size={16} /></NavLink>
+            <button onClick={() => void signOut()} className={`${expanded ? 'flex' : 'hidden'} text-slate-500 hover:text-white`} aria-label="Sign out" title="Sign out"><LogOut size={16} /></button>
           </div>
         </div>
       </aside>
@@ -132,7 +139,7 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
   );
 }
 
-function TopNav({ depot, setDepot, onMenu }: { depot: DepotFilter; setDepot: (d: DepotFilter) => void; onMenu: () => void }) {
+function TopNav({ depot, setDepot, onMenu, live }: { depot: DepotFilter; setDepot: (d: DepotFilter) => void; onMenu: () => void; live: 'connecting' | 'live' | 'offline' }) {
   const nav = useNavigate();
   const now = useNow(15_000);
   const [open, setOpen] = useState(false);
@@ -155,7 +162,8 @@ function TopNav({ depot, setDepot, onMenu }: { depot: DepotFilter; setDepot: (d:
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={() => setClockOpen(true)} title="Demo clock — change the business time" className="flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold text-slate-700 tabular bg-slate-100 hover:bg-slate-200"><Clock size={13} className="text-slate-500" /><span className="hidden sm:inline">{dayLabel(now)} ·</span>{hhmm(now)}</button>
+        <LiveDot state={live} />
+        <button onClick={() => clock.data?.demoMode !== false && setClockOpen(true)} disabled={clock.data?.demoMode === false} title={clock.data?.demoMode === false ? 'Business time' : 'Demo clock — change the business time'} className="flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold text-slate-700 tabular bg-slate-100 hover:bg-slate-200"><Clock size={13} className="text-slate-500" /><span className="hidden sm:inline">{dayLabel(now)} ·</span>{hhmm(now)}</button>
         <button onClick={() => setOpen(!open)} className="relative w-9 h-9 flex items-center justify-center rounded-md hover:bg-slate-100" aria-label={`Notifications, ${unread + openEx.length} to read`}>
           <Bell size={17} className="text-slate-500" />
           {unread + openEx.length > 0 && <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center tabular bg-red-600 ring-2 ring-white">{openEx.length || unread}</span>}
@@ -219,7 +227,7 @@ function ClockDialog({ onClose, planDate }: { onClose: () => void; planDate?: st
   const [confirmReset, setConfirmReset] = useState(false);
   const set = useAct((at: string) => put('/clock', { at }), { onDone: async () => { await syncClock(); qc.invalidateQueries(); onClose(); }, success: 'Clock changed' });
   const reset = useAct(() => post('/demo/reset'), { onDone: async () => { await syncClock(); qc.invalidateQueries(); toast('success', 'Demo day reset to Thu 30 Apr, 02:30'); onClose(); } });
-  const presets: [string, string][] = [['02:30', 'Planning'], ['03:10', 'Loading'], ['04:55', 'On the road'], ['05:55', 'Move a stop'], ['06:51', 'Back online'], ['08:30', 'Receipts']];
+  const presets: [string, string][] = [['02:30', 'Planning'], ['03:10', 'Loading'], ['04:55', 'On the road'], ['05:35', 'Delay reported'], ['05:55', 'Move a stop'], ['06:51', 'Back online'], ['08:30', 'Receipts']];
   return (
     <Modal title="Demo clock" onClose={onClose} width={460}>
       <p className="text-[13px] text-slate-600 -mt-1 mb-4">PathWise runs on a business clock so the demo day can be replayed. It keeps moving in real time from the time you set. Every screen and phone follows it.</p>

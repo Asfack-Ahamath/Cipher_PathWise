@@ -1,5 +1,6 @@
 import { buildNetwork, type Network, type Order } from '@pathwise/core';
 import { q, type Db } from '../db.js';
+import { getSettings } from '../lib/settings.js';
 
 const seq = async (fns: (() => Promise<any[]>)[]) => { const out: any[][] = []; for (const f of fns) out.push(await f()); return out; };
 
@@ -7,14 +8,27 @@ const seq = async (fns: (() => Promise<any[]>)[]) => { const out: any[][] = []; 
 export async function loadNetwork(db?: Db): Promise<Network> {
   // sequential on purpose: inside a transaction all queries share one client
   const [outlets, vehicles, travel, allowance] = await seq([
-    () => q<any>(`SELECT id, name, brand, district, depot, dock, parking, open_time AS open, close_time AS close, mall_window AS "mallWindow", van_only AS "vanOnly", lat, lng FROM outlets`, [], db),
+    () => q<any>(`SELECT id, name, brand, district, depot, dock, parking, open_time AS open, close_time AS close, mall_window AS "mallWindow", van_only AS "vanOnly", lat, lng, is_active AS "isActive" FROM outlets`, [], db),
     () => q<any>(`SELECT id, type, temp, depot, weight_cap AS "weightCap", volume_cap AS "volumeCap", km_per_l AS "kmPerL", fuel_quota_l AS "fuelQuotaL", fuel_used_l AS "fuelUsedL", status, driver_name AS "driverName" FROM vehicles`, [], db),
     () => q<any>(`SELECT depot, district, out_min AS "outMin", inter_min AS "interMin", out_km AS "outKm", inter_km AS "interKm", road_class AS "roadClass" FROM district_travel`, [], db),
     () => q<any>(`SELECT brand, dock, minutes FROM service_allowance`, [], db),
   ]);
   const al: any = { Fresh: {}, Style: {}, Tech: {} };
   for (const a of allowance) al[a.brand][a.dock] = a.minutes;
-  return buildNetwork({ outlets, vehicles, travel, allowance: al });
+  const { rules } = await getSettings(db);
+  const { traffic, roads } = await conditions(db);
+  return buildNetwork({ outlets: outlets.filter((o: any) => o.isActive !== false), vehicles, travel, allowance: al, rules, traffic, roads });
+}
+
+/* traffic_speed and road_conditions change only on re-seed; cache them for ten minutes. */
+let condCache: { traffic: Map<string, number>; roads: Map<string, number>; at: number } | null = null;
+export const invalidateConditions = () => { condCache = null; };
+async function conditions(db?: Db) {
+  if (condCache && Date.now() - condCache.at < 600_000) return condCache;
+  const t = await q<any>(`SELECT district, hour, monsoon, speed_index FROM traffic_speed`, [], db);
+  const r = await q<any>(`SELECT district, to_char(date,'YYYY-MM-DD') AS date, disruption_index FROM road_conditions WHERE disruption_index < 100`, [], db);
+  condCache = { traffic: new Map(t.map(x => [`${x.district}|${x.hour}|${x.monsoon ? 1 : 0}`, Number(x.speed_index)])), roads: new Map(r.map(x => [`${x.district}|${x.date}`, Number(x.disruption_index)])), at: Date.now() };
+  return condCache;
 }
 
 export const ORDER_COLS = `o.id, o.outlet_id AS "outletId", to_char(o.delivery_date, 'YYYY-MM-DD') AS date, o.temp, o.units, o.kg, o.m3, o.description, o.status, o.source,
@@ -34,4 +48,10 @@ export async function nextOperatingDay(after: string, db?: Db): Promise<string> 
 export async function activePlanDate(db?: Db): Promise<string> {
   const r = await q<{ value: string }>(`SELECT value FROM settings WHERE key = 'plan_date'`, [], db);
   return r[0]?.value ?? '2026-04-30';
+}
+
+/** Calendar facts for a date (monsoon affects travel speed). */
+export async function calendarDay(date: string, db?: Db) {
+  const r = await q<any>(`SELECT is_operating AS "isOperating", is_payday AS "isPayday", holiday, festival, festival_ramp AS "festivalRamp", monsoon, is_holiday AS "isHoliday" FROM calendar WHERE date = $1`, [date], db);
+  return r[0] ?? { isOperating: true, isPayday: false, holiday: null, festival: null, festivalRamp: 0, monsoon: false, isHoliday: false };
 }

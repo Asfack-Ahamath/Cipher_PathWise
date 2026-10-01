@@ -23,7 +23,7 @@ beforeAll(async () => {
     const r = await call('', 'POST', '/api/auth/login', { email, password: 'PathWise@2026' });
     expect(r.status).toBe(200); tokens[who] = r.body.token;
   }
-  const pin = await call('', 'POST', '/api/auth/login', { pin: '2468', depot: 'Kandy' });
+  const pin = await call('', 'POST', '/api/auth/pin', { pin: '2468', depot: 'Kandy' });
   expect(pin.status).toBe(200); tokens.loader = pin.body.token;
 }, 60000);
 afterAll(async () => { await app?.close(); const { pool } = await import('../src/db.js'); await pool.end(); });
@@ -65,6 +65,7 @@ describe('judge walkthrough', () => {
     const t = q.body.trips.find((x: any) => x.vehicleId === 'VEH041');
     expect(t).toBeTruthy(); tripId = t.id;
     const d = await call('loader', 'GET', `/api/loader/trips/${tripId}`);
+    expect((await call('loader', 'POST', `/api/loader/trips/${tripId}/claim`, { device: 'Dock tablet 2' })).status).toBe(200);
     const lines = d.body.stops.flatMap((s: any) => s.lines);
     for (const l of lines.filter((l: any) => l.orderId !== 'ORD0093173')) expect((await call('loader', 'POST', `/api/loader/trips/${tripId}/lines/${l.orderId}`, { state: 'loaded' })).status).toBe(200);
     const f = await call('loader', 'POST', `/api/loader/trips/${tripId}/lines/ORD0093173/flag`, { reason: 'missing', loadedUnits: 10, item: 'yoghurt cases' });
@@ -87,15 +88,31 @@ describe('judge walkthrough', () => {
     // online: start and first stop
     let s = await call('driver', 'POST', '/api/driver/sync', { events: [ev('trip_started', null, '04:10'), ev('arrived', stops[0], '05:01'), ev('delivered', stops[0], '05:17', { outcome: 'full', receiver: 'A. Perera' })] });
     expect(s.body.results.every((r: any) => r.status === 'applied')).toBe(true);
-    // the phone goes quiet; at 05:55 the dispatcher moves the last stop to VEH039
+    // 05:35 the driver reports a road closure of about two hours — the reason a stop may have to move
+    await call('dispatcher', 'PUT', '/api/clock', { at: `${PLAN}T05:35:00+05:30` });
+    s = await call('driver', 'POST', '/api/driver/sync', { events: [ev('problem', null, '05:35', { kind: 'road', label: 'Road closed', delayMin: 120, note: 'Landslide near Kadugannawa' })] });
+    expect(s.body.results[0].status).toBe('applied');
+    const tr = await call('dispatcher', 'GET', '/api/tracking');
+    const mine = tr.body.trips?.find((t: any) => t.id === tripId) ?? tr.body.vehicles?.flatMap((v: any) => v.trips ?? [v]).find((t: any) => t.id === tripId || t.tripId === tripId);
+    expect(JSON.stringify(mine ?? tr.body)).toContain('Road closed');
+    // the phone then goes quiet; at 05:55 the dispatcher checks the last stop: keep it, or move it?
     await call('dispatcher', 'PUT', '/api/clock', { at: `${PLAN}T05:55:00+05:30` });
     const opts = await call('dispatcher', 'GET', `/api/trips/${tripId}/move-options?outletId=${last}`);
-    console.log(opts.body.map((o: any) => `${o.vehicleId} T${o.trip} ${o.depart} eta ${o.eta} ${o.ok ? 'OK' : o.problem}`));
-    const pick = opts.body.find((o: any) => o.ok);
+    expect(opts.status).toBe(200);
+    expect(opts.body.keep.vehicleId).toBe('VEH041');
+    expect(opts.body.keep.hold?.minutes).toBe(120);
+    expect(opts.body.why).toContain('Road closed');
+    expect(opts.body.keep.eta >= opts.body.keep.planned).toBe(true);
+    const pick = opts.body.options.find((o: any) => o.ok);
     expect(pick).toBeTruthy();
-    const mv = await call('dispatcher', 'POST', `/api/trips/${tripId}/move-stop`, { outletId: last, toVehicleId: pick.vehicleId, reason: 'VEH041 out of signal on the Kandy–Kegalle road.' });
+    expect((await call('dispatcher', 'POST', `/api/trips/${tripId}/move-stop`, { outletId: last, to: { vehicleId: pick.vehicleId }, reason: '' })).status).toBe(400);
+    const mv = await call('dispatcher', 'POST', `/api/trips/${tripId}/move-stop`, { outletId: last, to: { vehicleId: pick.vehicleId }, reason: 'VEH041 held by a road closure (~2 h); the store would miss its window.' });
     if (mv.status !== 200) console.log(mv.body);
     expect(mv.status).toBe(200);
+    const loaderNote = await call('loader', 'GET', '/api/notifications');
+    expect(loaderNote.body.items.some((n: any) => n.title.startsWith(`Load ${last}`))).toBe(true);
+    const run2 = await call('driver', 'GET', '/api/driver/run');
+    expect(run2.body.trips[0].routeChange?.moves?.[0]?.outletId).toBe(last);
     // 06:51: signal back; the phone uploads everything it saved, including the moved stop
     await call('dispatcher', 'PUT', '/api/clock', { at: `${PLAN}T06:51:00+05:30` });
     const offline = stops.slice(1).map((o: string, i: number) => ev('delivered', o, ['05:46', '06:15', '06:42', '06:55'][i] ?? '06:58', { outcome: o === 'OUT116' ? 'partial' : 'full', receiver: 'Store staff' }));
@@ -107,6 +124,9 @@ describe('judge walkthrough', () => {
     const ex = (await call('dispatcher', 'GET', '/api/exceptions')).body.find((e: any) => e.type === 'sync_conflict' && e.status === 'open');
     expect(ex).toBeTruthy();
     expect((await call('dispatcher', 'POST', `/api/exceptions/${ex.id}/resolve`, { decision: 'keep_driver' })).status).toBe(200);
+    // acknowledging the route change clears the banner
+    await call('driver', 'POST', '/api/driver/sync', { events: [ev('route_ack', null, '06:52')] });
+    expect((await call('driver', 'GET', '/api/driver/run')).body.trips[0].routeChange).toBeNull();
     const close = await call('driver', 'POST', '/api/driver/sync', { events: [ev('trip_closed', null, '07:15')] });
     expect(close.body.results[0].status).toBe('applied');
   });
@@ -122,7 +142,15 @@ describe('judge walkthrough', () => {
   });
 
   it('dispatcher read models respond', async () => {
-    for (const u of ['/api/overview', '/api/tracking', '/api/forecast', '/api/deferrals', '/api/orders']) expect((await call('dispatcher', 'GET', u)).status).toBe(200);
+    for (const u of ['/api/overview', '/api/tracking', '/api/forecast', '/api/deferrals', '/api/orders', `/api/plans/${PLAN}/versions`, '/api/peak-day']) expect((await call('dispatcher', 'GET', u)).status).toBe(200);
+    const peak = await call('dispatcher', 'GET', '/api/peak-day');
+    expect(peak.body.feasibility.passed).toBe(true);
+    const versions = await call('dispatcher', 'GET', `/api/plans/${PLAN}/versions`);
+    expect(versions.body[0].status).toBe('published');
+    expect(versions.body[0].stats.trips).toBeGreaterThan(0);
+    const csv = await app.inject({ method: 'GET', url: '/api/orders.csv', headers: { authorization: `Bearer ${tokens.dispatcher}` } });
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.body.split('\n')[0]).toContain('outletId');
     expect((await call('driver', 'GET', '/api/overview')).status).toBe(403);
   });
 });
