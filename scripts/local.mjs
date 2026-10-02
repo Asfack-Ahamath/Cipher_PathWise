@@ -1,7 +1,7 @@
 /* Run PathWise on a laptop with only Node.js installed — no Docker, no PostgreSQL install.
    A real PostgreSQL (embedded-postgres, downloaded by npm for your OS) runs from ./.pgdata.
 
-     npm run local        build once, then serve everything on http://localhost:8080
+     npm run local        build once, then serve everything on http://localhost:3000
      npm run local:dev    development mode (API + Vite with hot reload on http://localhost:5173)
 */
 import { spawn } from 'node:child_process';

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-const API = process.env.VITE_API_PROXY ?? 'http://localhost:8080';
+const API = process.env.VITE_API_PROXY ?? 'http://localhost:3000';
 
 export default defineConfig({
   plugins: [
