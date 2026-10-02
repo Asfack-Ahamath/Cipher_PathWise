@@ -211,9 +211,9 @@ export function DetailPanel({ open, onClose, children, width = 380 }: { open: bo
 /* ── Modal ── */
 export function Modal({ title, onClose, children, width = 480 }: { title: ReactNode; onClose: () => void; children: ReactNode; width?: number }) {
   return (
-    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40" onClick={onClose}>
-      <div role="dialog" aria-modal="true" style={{ width }} className="max-w-full bg-white rounded-xl shadow-[0_24px_48px_-12px_rgba(15,23,42,.35)]" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 h-14 border-b border-[#E4E7EC]">
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" style={{ width }} className="max-w-full bg-white rounded-xl shadow-[0_24px_48px_-12px_rgba(15,23,42,.35)] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 h-14 border-b border-[#E4E7EC] flex-shrink-0">
           <h3 className="text-[16px] font-semibold text-slate-900">{title}</h3>
           <button onClick={onClose} aria-label="Close" className="w-8 h-8 -mr-2 flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100">✕</button>
         </div>

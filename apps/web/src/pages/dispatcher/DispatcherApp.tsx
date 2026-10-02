@@ -163,7 +163,7 @@ function TopNav({ depot, setDepot, onMenu, live }: { depot: DepotFilter; setDepo
       </div>
       <div className="flex items-center gap-2">
         <LiveDot state={live} />
-        <button onClick={() => clock.data?.demoMode !== false && setClockOpen(true)} disabled={clock.data?.demoMode === false} title={clock.data?.demoMode === false ? 'Business time' : 'Demo clock — change the business time'} className="flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold text-slate-700 tabular bg-slate-100 hover:bg-slate-200"><Clock size={13} className="text-slate-500" /><span className="hidden sm:inline">{dayLabel(now)} ·</span>{hhmm(now)}</button>
+        <button onClick={(e) => { e.stopPropagation(); clock.data?.demoMode !== false && setClockOpen(true); }} disabled={clock.data?.demoMode === false} title={clock.data?.demoMode === false ? 'Business time' : 'Demo clock — change the business time'} className="flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold text-slate-700 tabular bg-slate-100 hover:bg-slate-200"><Clock size={13} className="text-slate-500" /><span className="hidden sm:inline">{dayLabel(now)} ·</span>{hhmm(now)}</button>
         <button onClick={() => setOpen(!open)} className="relative w-9 h-9 flex items-center justify-center rounded-md hover:bg-slate-100" aria-label={`Notifications, ${unread + openEx.length} to read`}>
           <Bell size={17} className="text-slate-500" />
           {unread + openEx.length > 0 && <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center tabular bg-red-600 ring-2 ring-white">{openEx.length || unread}</span>}
