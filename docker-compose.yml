@@ -1,4 +1,4 @@
-# docker compose up  →  PostgreSQL, migrations, seed data and the app on http://localhost:8080
+# docker compose up  →  PostgreSQL, migrations, seed data and the app on http://localhost:3000
 # Works with no .env file (demo mode, local database, photos in the database).
 # To run against Supabase instead, see docs/supabase.md — only environment variables change.
 services:
@@ -39,7 +39,7 @@ services:
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-pathwise-proofs}
-      APP_URL: ${APP_URL:-http://localhost:8080}
+      APP_URL: ${APP_URL:-http://localhost:3000}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       TRUST_PROXY: ${TRUST_PROXY:-false}
       LOG_LEVEL: ${LOG_LEVEL:-info}
