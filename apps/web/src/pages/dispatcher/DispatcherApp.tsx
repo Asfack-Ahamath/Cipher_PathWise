@@ -26,12 +26,14 @@ export default function DispatcherApp() {
   const [depot, setDepot] = useState<DepotFilter>('all');
   const [mobileNav, setMobileNav] = useState(false);
   const live = useLiveUpdates();
+  const [clockOpen, setClockOpen] = useState(false);
+  const clock = useApi<any>(['clock'], '/clock', { refetchInterval: 60_000 });
   return (
     <DepotCtx.Provider value={depot}>
       <div className="h-[100dvh] flex bg-[#F4F6FA] overflow-hidden">
         <Sidebar mobileOpen={mobileNav} onClose={() => setMobileNav(false)} />
         <div className="flex-1 min-w-0 flex flex-col">
-          <TopNav depot={depot} setDepot={setDepot} onMenu={() => setMobileNav(true)} live={live} />
+          <TopNav depot={depot} setDepot={setDepot} onMenu={() => setMobileNav(true)} live={live} clockOpen={clockOpen} setClockOpen={setClockOpen} />
           <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <Routes>
               <Route index element={<Overview />} />
@@ -47,6 +49,7 @@ export default function DispatcherApp() {
           </main>
         </div>
       </div>
+      {clockOpen && <ClockDialog onClose={() => setClockOpen(false)} planDate={clock.data?.planDate} />}
     </DepotCtx.Provider>
   );
 }
@@ -139,11 +142,10 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
   );
 }
 
-function TopNav({ depot, setDepot, onMenu, live }: { depot: DepotFilter; setDepot: (d: DepotFilter) => void; onMenu: () => void; live: 'connecting' | 'live' | 'offline' }) {
+function TopNav({ depot, setDepot, onMenu, live, clockOpen, setClockOpen }: { depot: DepotFilter; setDepot: (d: DepotFilter) => void; onMenu: () => void; live: 'connecting' | 'live' | 'offline'; clockOpen: boolean; setClockOpen: (v: boolean) => void }) {
   const nav = useNavigate();
   const now = useNow(15_000);
   const [open, setOpen] = useState(false);
-  const [clockOpen, setClockOpen] = useState(false);
   const clock = useApi<any>(['clock'], '/clock', { refetchInterval: 60_000 });
   const notes = useApi<any>(['notifications'], '/notifications', { refetchInterval: 15_000 });
   const ex = useApi<any[]>(['exceptions'], '/exceptions', { refetchInterval: 15_000 });
@@ -163,7 +165,7 @@ function TopNav({ depot, setDepot, onMenu, live }: { depot: DepotFilter; setDepo
       </div>
       <div className="flex items-center gap-2">
         <LiveDot state={live} />
-        <button onClick={() => clock.data?.demoMode !== false && setClockOpen(true)} disabled={clock.data?.demoMode === false} title={clock.data?.demoMode === false ? 'Business time' : 'Demo clock — change the business time'} className="flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold text-slate-700 tabular bg-slate-100 hover:bg-slate-200"><Clock size={13} className="text-slate-500" /><span className="hidden sm:inline">{dayLabel(now)} ·</span>{hhmm(now)}</button>
+        <button onClick={(e) => { e.stopPropagation(); clock.data?.demoMode !== false && setClockOpen(true); }} disabled={clock.data?.demoMode === false} title={clock.data?.demoMode === false ? 'Business time' : 'Demo clock — change the business time'} className="flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold text-slate-700 tabular bg-slate-100 hover:bg-slate-200"><Clock size={13} className="text-slate-500" /><span className="hidden sm:inline">{dayLabel(now)} ·</span>{hhmm(now)}</button>
         <button onClick={() => setOpen(!open)} className="relative w-9 h-9 flex items-center justify-center rounded-md hover:bg-slate-100" aria-label={`Notifications, ${unread + openEx.length} to read`}>
           <Bell size={17} className="text-slate-500" />
           {unread + openEx.length > 0 && <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center tabular bg-red-600 ring-2 ring-white">{openEx.length || unread}</span>}
@@ -212,7 +214,6 @@ function TopNav({ depot, setDepot, onMenu, live }: { depot: DepotFilter; setDepo
           </div>
         </>
       )}
-      {clockOpen && <ClockDialog onClose={() => setClockOpen(false)} planDate={clock.data?.planDate} />}
     </header>
   );
 }

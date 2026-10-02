@@ -1,3 +1,4 @@
+import { warn } from './lib/console.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -67,14 +68,14 @@ export function assertConfig() {
   const weakSecret = config.jwtSecret.length < 32 || config.jwtSecret.startsWith('dev-only') || config.jwtSecret.startsWith('change-me');
   // a real rollout (DEMO_MODE=false) refuses to start with a guessable signing key; the judges' demo only warns
   if (config.isProd && weakSecret) {
-    if (config.demoMode) console.warn('[pathwise] JWT_SECRET is the placeholder value. Fine for the demo; set a random 32+ character secret before real use.');
+    if (config.demoMode) warn('JWT_SECRET is the placeholder value. Fine for the demo; set a random 32+ character secret before real use.');
     else problems.push('JWT_SECRET must be a random value of at least 32 characters when DEMO_MODE=false (e.g. openssl rand -base64 48).');
   }
   const needsSupabase = config.authProvider === 'supabase' || config.storageProvider === 'supabase';
   if (needsSupabase && !config.supabase.url) problems.push('SUPABASE_URL is required when AUTH_PROVIDER or STORAGE_PROVIDER is "supabase".');
   if (needsSupabase && !config.supabase.serviceRoleKey) problems.push('SUPABASE_SERVICE_ROLE_KEY is required when AUTH_PROVIDER or STORAGE_PROVIDER is "supabase".');
   if (config.authProvider === 'supabase' && !config.supabase.anonKey) problems.push('SUPABASE_ANON_KEY is required when AUTH_PROVIDER is "supabase".');
-  if (config.isProd && config.demoMode) console.warn('[pathwise] DEMO_MODE is on in production: demo accounts, the demo clock and "Reset demo day" are enabled. Set DEMO_MODE=false for a real rollout.');
+  if (config.isProd && config.demoMode) warn('DEMO_MODE is on in production: demo accounts, the demo clock and "Reset demo day" are enabled. Set DEMO_MODE=false for a real rollout.');
   if (config.adminPassword && config.adminPassword.length < 10) problems.push('ADMIN_PASSWORD must be at least 10 characters.');
   if (problems.length) throw new Error(`Configuration error:\n - ${problems.join('\n - ')}`);
 }
