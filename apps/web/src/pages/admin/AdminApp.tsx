@@ -83,12 +83,14 @@ export default function AdminApp() {
 /** Page frame shared by the admin screens. */
 export function AdminPage({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-6">
-      <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
-        <div><h1 className="text-[20px] font-semibold tracking-[-0.01em] text-slate-900">{title}</h1>{subtitle && <p className="text-[13px] text-slate-500 mt-0.5">{subtitle}</p>}</div>
-        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+    <div className="w-full px-4 sm:px-6 py-6">
+      <div className="mx-auto max-w-[1200px]">
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
+          <div><h1 className="text-[20px] font-semibold tracking-[-0.01em] text-slate-900">{title}</h1>{subtitle && <p className="text-[13px] text-slate-500 mt-0.5">{subtitle}</p>}</div>
+          {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+        </div>
+        {children}
       </div>
-      {children}
     </div>
   );
 }
