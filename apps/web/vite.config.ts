@@ -38,6 +38,8 @@ export default defineConfig({
       },
     }),
   ],
-  server: { port: 5173, proxy: { '/api': { target: API, changeOrigin: true } } },
+  // host: true also listens on the LAN address, so phones on the same Wi-Fi can open the Network URL
+  server: { host: true, port: 5173, proxy: { '/api': { target: API, changeOrigin: true } } },
+  preview: { host: true },
   build: { outDir: 'dist', sourcemap: false, chunkSizeWarningLimit: 900 },
 });
