@@ -28,11 +28,15 @@ export default function Tracking() {
   const detail = useApi<any>(['trip', selId], selId ? `/trips/${selId}` : null, { refetchInterval: 10_000 });
 
   const list: any[] = (q.data?.trips ?? []).filter((t: any) => depot === 'all' || t.vehicle.depot === depot);
-  const mapTrips: MapTrip[] = useMemo(() => list.map(t => ({
-    key: String(t.id), label: `${t.vehicleId} · T${t.trip}`, depot: t.depot, pos: t.position, estimate: t.estimate,
-    tone: t.offline ? 'offline' : t.conflicts || t.lateRisk.length ? 'alert' : t.status === 'completed' ? 'done' : t.status === 'in_progress' ? 'road' : 'depot',
-    stops: t.stops.map((s: any) => ({ id: s.outletId, seq: s.seq, pos: [s.lat, s.lng] as [number, number], state: s.done ? 'done' : 'next' })),
-  })), [q.data, depot]);
+  const mapTrips: MapTrip[] = useMemo(() => list.map(t => {
+    const pos = Array.isArray(t.position) ? t.position : (t.position?.lat && t.position?.lng) ? [t.position.lat, t.position.lng] : null;
+    const estimate = t.estimate && (Array.isArray(t.estimate) ? t.estimate : (t.estimate?.lat && t.estimate?.lng) ? [t.estimate.lat, t.estimate.lng] : null);
+    return {
+      key: String(t.id), label: `${t.vehicleId} · T${t.trip}`, depot: t.depot, pos: pos as any, estimate: estimate as any,
+      tone: t.offline ? 'offline' : t.conflicts || t.lateRisk.length ? 'alert' : t.status === 'completed' ? 'done' : t.status === 'in_progress' ? 'road' : 'depot',
+      stops: t.stops.map((s: any) => ({ id: s.outletId, seq: s.seq, pos: [s.lat, s.lng] as [number, number], state: s.done ? 'done' : 'next' })),
+    };
+  }), [q.data, depot]);
   if (q.isLoading) return <Loading />;
   if (q.error) return <ErrorState error={q.error} retry={q.refetch} />;
   if (!list.length) return <div className="p-6"><Empty icon={<MapPin size={28} />} title="Nothing on the road yet">Trips appear here once a plan is published.</Empty></div>;
