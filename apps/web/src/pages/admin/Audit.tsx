@@ -44,8 +44,8 @@ export default function Audit() {
                       <td className="px-4 py-2.5 font-mono text-[12px] text-slate-600">{a.entity ?? '—'}</td>
                       <td className="px-4 py-2.5 max-w-[360px]">
                         {a.data && Object.keys(a.data).length > 0 && (open === a.id
-                          ? <><pre className="text-[11px] bg-slate-50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(a.data, null, 2)}</pre><button className="mt-2 text-[12px] font-semibold text-slate-600 hover:text-slate-900" onClick={() => setOpen(null)}>Hide</button></>
-                          : <button className="text-[12px] font-semibold text-teal-700 hover:text-teal-800" onClick={(e) => { e.preventDefault(); setOpen(a.id); }}>Show {Object.keys(a.data).length} field{Object.keys(a.data).length > 1 ? 's' : ''}</button>)}
+                          ? <pre className="text-[11px] bg-slate-50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(a.data, null, 2)}</pre>
+                          : <button className="text-[12px] font-semibold text-teal-700" onClick={() => setOpen(a.id)}>Show {Object.keys(a.data).length} field{Object.keys(a.data).length > 1 ? 's' : ''}</button>)}
                       </td>
                     </tr>
                   ))}
