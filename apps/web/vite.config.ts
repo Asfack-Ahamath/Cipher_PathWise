@@ -33,7 +33,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         runtimeCaching: [
           { urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/, handler: 'CacheFirst', options: { cacheName: 'fonts', expiration: { maxEntries: 20 } } },
-          { urlPattern: /^https:\/\/[a-d]\.basemaps\.cartocdn\.com\/.*/, handler: 'CacheFirst', options: { cacheName: 'tiles', expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 14 } } },
+          { urlPattern: /^https:\/\/[a-c]\.tile\.openstreetmap\.org\/.*/, handler: 'CacheFirst', options: { cacheName: 'tiles', expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 14 } } },
         ],
       },
     }),

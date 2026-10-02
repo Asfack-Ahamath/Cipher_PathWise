@@ -1,3 +1,4 @@
+import { step } from '../lib/console.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { OUTLET_ROWS, SERVICE_ALLOWANCE, TRAVEL_ROWS, VEHICLE_ROWS, outletPosition, type Brand, type Depot, type Dock } from '@pathwise/core';
@@ -33,7 +34,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 export interface OutletRow { id: string; name: string; brand: Brand; district: string; depot: Depot; dock: Dock; parking: string; open: string; close: string; mallWindow: string | null; vanOnly: boolean; lat: number; lng: number }
 export interface VehicleRow { id: string; type: 'truck' | 'van'; temp: 'reefer' | 'ambient'; depot: Depot; weightCap: number; volumeCap: number; kmPerL: number; fuelQuotaL: number }
 
-export function loadDatasets(dir: string, log = console.log) {
+export function loadDatasets(dir: string, log: (m: string) => void = step) {
   const src: Record<string, string> = {};
   let outlets: OutletRow[];
   const oc = read(dir, 'outlets.csv');

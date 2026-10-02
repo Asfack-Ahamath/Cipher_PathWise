@@ -1,3 +1,4 @@
+import { step } from '../lib/console.js';
 import bcrypt from 'bcryptjs';
 import { CALENDAR_ROWS, DEMO_DAY, generateDemoOrders, ROAD_DISRUPTION, SKIPPED_YESTERDAY, TRAFFIC_SPEED, WEEKLY_DEMAND, type Outlet } from '@pathwise/core';
 import { config } from '../config.js';
@@ -55,7 +56,7 @@ export function calendarRows(dir: string) {
 }
 
 /** traffic_speed.csv, road_conditions.csv and weekly demand history. */
-export async function seedConditions(db: Db, log = console.log) {
+export async function seedConditions(db: Db, log: (m: string) => void = step) {
   const dir = config.dataDir;
   const tc = readCsv(dir, 'traffic_speed.csv');
   const traffic = tc ? tc.map(r => [r.district, Number(r.hour), r.monsoon === '1' || r.monsoon === 'true', Number(r.speed_index)])
@@ -71,7 +72,7 @@ export async function seedConditions(db: Db, log = console.log) {
   log(`conditions: ${traffic.length} traffic rows${tc ? ' (CSV)' : ''}, ${roads.length} road-condition rows${rc ? ' (CSV)' : ''}, ${weekly.length} weekly demand rows`);
 }
 
-export async function seedReference(db: Db, log = console.log) {
+export async function seedReference(db: Db, log: (m: string) => void = step) {
   const ds = loadDatasets(config.dataDir, log);
   for (const o of ds.outlets) await q(`INSERT INTO outlets (id,name,brand,district,depot,dock,parking,open_time,close_time,mall_window,van_only,lat,lng) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (id) DO NOTHING`,
     [o.id, o.name, o.brand, o.district, o.depot, o.dock, o.parking, o.open, o.close, o.mallWindow, o.vanOnly, o.lat, o.lng], db);
@@ -94,7 +95,7 @@ export async function seedReference(db: Db, log = console.log) {
 
 /** Accounts. With AUTH_PROVIDER=supabase each person also gets a Supabase Auth user (created or linked by
  *  email) and no local password hash; loaders keep their dock PIN locally. */
-export async function seedUsers(db: Db, log = console.log) {
+export async function seedUsers(db: Db, log: (m: string) => void = step) {
   const people = [ADMIN_USER, ...(config.demoMode ? DEMO_USERS : [])];
   for (const u of people) {
     const isAdmin = u.role === 'admin';
@@ -152,7 +153,7 @@ export async function seedDay(db: Db) {
 // the audit log is never wiped: a reset is itself an audited action
 const OPERATIONAL = ['loading_sessions', 'vehicle_presence', 'notification_reads', 'notifications', 'pods', 'attachments', 'stop_events', 'receipts', 'exceptions', 'stop_moves', 'deferrals', 'trip_orders', 'trips', 'plans', 'orders'];
 
-export async function resetDay(log = console.log) {
+export async function resetDay(log: (m: string) => void = step) {
   await tx(async c => {
     await c.query(`TRUNCATE ${OPERATIONAL.join(', ')} RESTART IDENTITY CASCADE`);
     await c.query(`UPDATE vehicles SET status = CASE WHEN id = ANY($1) THEN 'in_workshop' ELSE 'available' END, status_note = NULL`, [Object.keys(WORKSHOP)]);
@@ -164,7 +165,7 @@ export async function resetDay(log = console.log) {
 
 /** First start: reference data, the admin (and demo accounts), and — in demo mode — the demo day.
  *  Safe to call on every start: it does nothing once outlets exist. */
-export async function seedIfEmpty(log = console.log) {
+export async function seedIfEmpty(log: (m: string) => void = step) {
   const n = await one<{ n: number }>(`SELECT count(*)::int AS n FROM outlets`);
   if (n && n.n > 0) return false;
   await tx(async c => {

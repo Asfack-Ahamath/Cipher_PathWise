@@ -7,12 +7,14 @@ import fstatic from '@fastify/static';
 import Fastify from 'fastify';
 import { config } from './config.js';
 import { HttpError } from './errors.js';
+import { devLogStream } from './lib/console.js';
 import { routes } from './routes/index.js';
 
 export async function buildServer() {
   const app = Fastify({
     logger: {
       level: config.logLevel,
+      ...(config.isProd ? {} : { stream: devLogStream() }),
       redact: { paths: ['req.headers.authorization', 'req.headers.cookie', 'req.query.ticket'], censor: '[redacted]' },
     },
     bodyLimit: 1024 * 1024,           // 1 MB by default; photo uploads raise it per route
@@ -29,9 +31,9 @@ export async function buildServer() {
         'script-src': ["'self'"],
         'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
-        'img-src': ["'self'", 'data:', 'blob:', 'https://*.basemaps.cartocdn.com', ...supabase],
+        'img-src': ["'self'", 'data:', 'blob:', 'https://*.tile.openstreetmap.org', ...supabase],
         // the service worker fetches fonts and map tiles for offline use, so they count as connections too
-        'connect-src': ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://*.basemaps.cartocdn.com', ...supabase],
+        'connect-src': ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://*.tile.openstreetmap.org', ...supabase],
         'worker-src': ["'self'", 'blob:'],
         'manifest-src': ["'self'"],
         'frame-ancestors': ["'none'"],
