@@ -62,6 +62,8 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
   const [open, setOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1280);
   const expanded = open || mobileOpen;
   const show = expanded ? '' : 'hidden';
+  const collapseButton = expanded && !mobileOpen && <button onClick={() => setOpen(false)} title="Collapse sidebar" aria-label="Collapse sidebar" className="w-8 h-8 -mr-1 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 focus-visible:opacity-100 transition-opacity"><PanelLeftClose size={17} /></button>;
+  const expandButton = !expanded && <button onClick={() => setOpen(true)} title="Expand sidebar" aria-label="Expand sidebar" className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 bg-white/10 text-white hover:bg-white/20"><PanelLeftOpen size={18} /></button>;
   const o = ov.data;
   const groups: { label: string; items: { to: string; label: string; icon: ElementType; badge?: number; tone?: 'warn' | 'bad' }[] }[] = [
     { label: 'Plan', items: [
@@ -84,17 +86,17 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
       <aside className={cx('z-50 flex-shrink-0 flex-col text-slate-300 transition-[width] duration-200',
         mobileOpen ? 'fixed inset-y-0 left-0 flex w-[260px]' : 'hidden lg:flex relative', !mobileOpen && (open ? 'w-[240px]' : 'w-16'))}
         style={{ background: 'linear-gradient(180deg,#0B1324 0%,#0E1B2E 60%,#0B2A2E 100%)' }}>
-        <div className={`group/head h-16 flex items-center gap-3 ${expanded ? 'px-5' : 'px-3.5'}`}>
+        <div className="h-16 flex items-center gap-3 px-5">
           {expanded ? (
             <div className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg,#2DD4BF,#0F766E)', boxShadow: '0 8px 20px -8px #14B8A6' }}><RouteIcon size={18} className="text-white" /></div>
           ) : (
-            <button onClick={() => setOpen(true)} title="Expand sidebar" aria-label="Expand sidebar" className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 bg-white/10 text-white hover:bg-white/20"><PanelLeftOpen size={18} /></button>
+            expandButton
           )}
           {expanded && <div className="leading-tight flex-1 min-w-0">
             <div className="text-[16px] font-semibold text-white tracking-[-0.01em]">PathWise</div>
             <div className="text-[11px] text-slate-400">Waypoint Group</div>
           </div>}
-          {expanded && !mobileOpen && <button onClick={() => setOpen(false)} title="Collapse sidebar" aria-label="Collapse sidebar" className="w-8 h-8 -mr-1 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 opacity-0 group-hover/head:opacity-100 focus-visible:opacity-100 transition-opacity"><PanelLeftClose size={17} /></button>}
+          {expanded && collapseButton}
           {mobileOpen && <button onClick={onClose} aria-label="Close menu" className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white"><X size={17} /></button>}
         </div>
         <nav className={`flex-1 overflow-y-auto ${expanded ? 'px-3' : 'px-2.5'} py-3 space-y-6`} aria-label="Dispatcher">

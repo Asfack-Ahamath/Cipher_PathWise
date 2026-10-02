@@ -1,6 +1,6 @@
 import { useState, type ElementType } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { Activity, Database, KeyRound, LogOut, Menu, ScrollText, Settings2, SlidersHorizontal, Store, Truck, Users as UsersIcon, X, ArrowLeftRight, Route as RouteIcon } from 'lucide-react';
+import { Activity, Database, KeyRound, LogOut, Menu, ScrollText, Settings2, SlidersHorizontal, Store, Truck, Users as UsersIcon, X, ArrowLeftRight, Route as RouteIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cx } from '../../components/ds';
 import { LiveDot } from '../../components/common';
 import { useAuth } from '../../lib/auth';
@@ -28,31 +28,47 @@ export default function AdminApp() {
   const { user, signOut } = useAuth();
   const live = useLiveUpdates();
   const [menu, setMenu] = useState(false);
+  const [open, setOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1280);
+  const expanded = open || menu;
+  const show = expanded ? '' : 'hidden';
+  const collapseButton = expanded && !menu && <button onClick={() => setOpen(false)} title="Collapse sidebar" aria-label="Collapse sidebar" className="w-8 h-8 -mr-1 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 focus-visible:opacity-100 transition-opacity"><PanelLeftClose size={17} /></button>;
+  const expandButton = !expanded && <button onClick={() => setOpen(true)} title="Expand sidebar" aria-label="Expand sidebar" className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 bg-white/10 text-white hover:bg-white/20"><PanelLeftOpen size={18} /></button>;
   return (
     <div className="h-[100dvh] flex bg-[#F4F6FA] overflow-hidden">
       {menu && <div className="lg:hidden fixed inset-0 z-40 bg-slate-900/40" onClick={() => setMenu(false)} />}
-      <aside className={cx('z-50 w-[240px] flex-shrink-0 flex-col text-slate-300', menu ? 'fixed inset-y-0 left-0 flex' : 'hidden lg:flex')} style={{ background: 'linear-gradient(180deg,#0B1324 0%,#111A3A 100%)' }}>
+      <aside className={cx('z-50 flex-shrink-0 flex-col text-slate-300 transition-[width] duration-200',
+        menu ? 'fixed inset-y-0 left-0 flex w-[240px]' : 'hidden lg:flex relative', !menu && (open ? 'w-[240px]' : 'w-16'))} style={{ background: 'linear-gradient(180deg,#0B1324 0%,#111A3A 100%)' }}>
         <div className="h-16 flex items-center gap-3 px-5">
-          <div className="w-9 h-9 rounded-[10px] flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#A5B4FC,#4F46E5)' }}><Settings2 size={18} className="text-white" /></div>
-          <div className="leading-tight flex-1"><div className="text-[16px] font-semibold text-white">Administration</div><div className="text-[11px] text-slate-400">PathWise · Waypoint Group</div></div>
+          {expanded ? (
+            <div className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg,#A5B4FC,#4F46E5)' }}><Settings2 size={18} className="text-white" /></div>
+          ) : (
+            expandButton
+          )}
+          {expanded && <div className="leading-tight flex-1"><div className="text-[16px] font-semibold text-white">Administration</div><div className="text-[11px] text-slate-400">PathWise · Waypoint Group</div></div>}
+          {expanded && collapseButton}
           {menu && <button onClick={() => setMenu(false)} aria-label="Close menu" className="text-slate-400"><X size={17} /></button>}
         </div>
-        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-1" aria-label="Administration">
+        <nav className={`flex-1 overflow-y-auto ${expanded ? 'px-3' : 'px-2.5'} py-3 space-y-1`} aria-label="Administration">
           {NAV.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end} onClick={() => setMenu(false)}
+            <NavLink key={to} to={to} end={end} onClick={() => setMenu(false)} title={label}
               className={({ isActive }) => cx('h-10 flex items-center gap-3 px-3 rounded-lg text-[13px] font-medium', isActive ? 'text-white bg-white/10 ring-1 ring-white/15' : 'text-slate-400 hover:text-white hover:bg-white/5')}>
-              <Icon size={17} />{label}
+              <Icon size={17} />{expanded && <span>{label}</span>}
             </NavLink>
           ))}
           <div className="pt-4 mt-4 border-t border-white/10">
-            <NavLink to="/d" className="h-10 flex items-center gap-3 px-3 rounded-lg text-[13px] font-medium text-slate-400 hover:text-white hover:bg-white/5"><RouteIcon size={17} />Operations (dispatcher)</NavLink>
+            <NavLink to="/d" title="Operations (dispatcher)" className={cx('h-10 flex items-center gap-3 px-3 rounded-lg text-[13px] font-medium text-slate-400 hover:text-white hover:bg-white/5')}><RouteIcon size={17} />{expanded && <span>Operations (dispatcher)</span>}</NavLink>
           </div>
         </nav>
-        <div className="p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[12px] font-semibold" style={{ background: 'linear-gradient(135deg,#818CF8,#4F46E5)' }}>{user?.name.split(' ').map(s => s[0]).join('').slice(0, 2)}</div>
-          <div className="min-w-0 flex-1"><div className="text-[13px] font-semibold text-white truncate">{user?.name}</div><div className="text-[12px] text-slate-400 truncate">{user?.email}</div></div>
-          <NavLink to="/account" className="text-slate-500 hover:text-white" title="Account and password" aria-label="Account and password"><KeyRound size={16} /></NavLink>
-          <button onClick={() => void signOut()} className="text-slate-500 hover:text-white" title="Sign out" aria-label="Sign out"><LogOut size={16} /></button>
+        <div className={expanded ? 'p-4' : 'p-3'}>
+          <div className={`flex items-center ${expanded ? 'justify-start' : 'justify-center'} gap-3`}>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[12px] font-semibold flex-shrink-0" style={{ background: 'linear-gradient(135deg,#818CF8,#4F46E5)' }}>{user?.name.split(' ').map(s => s[0]).join('').slice(0, 2)}</div>
+            <div className={`${show} min-w-0 flex-1`}>
+              <div className="text-[13px] font-semibold text-white truncate">{user?.name}</div>
+              <div className="text-[12px] text-slate-400 truncate">{user?.email}</div>
+            </div>
+            <NavLink to="/account" className={`${expanded ? 'flex' : 'hidden'} text-slate-500 hover:text-white`} title="Account and password" aria-label="Account and password"><KeyRound size={16} /></NavLink>
+            <button onClick={() => void signOut()} className={`${expanded ? 'flex' : 'hidden'} text-slate-500 hover:text-white`} title="Sign out" aria-label="Sign out"><LogOut size={16} /></button>
+          </div>
         </div>
       </aside>
       <div className="flex-1 min-w-0 flex flex-col">
