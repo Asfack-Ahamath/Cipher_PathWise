@@ -317,7 +317,7 @@ export async function dataStatus() {
 export async function importForecast(user: AuthUser, csv: string) {
   if (csv.length > 2_000_000) throw bad('The file is too large (2 MB max).');
   let rows: Record<string, string>[];
-  try { rows = parseCsv(csv.replace(/^﻿/, '')); } catch { throw bad('That is not a CSV file.'); }
+  try { rows = parseCsv(csv.replace(/^\uFEFF/, '')); } catch { throw bad('That is not a CSV file.'); }
   if (!rows.length) throw bad('The file has no rows.');
   const horizon = new Map(FORECAST_HORIZON.map(([id, depot, brand, y, w]) => [id, { depot, brand, y, w }]));
   const problems: string[] = [];
