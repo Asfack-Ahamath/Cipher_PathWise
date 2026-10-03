@@ -31,6 +31,4 @@ const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeForm
 export const localDate = (d: Date) => { const p = new Intl.DateTimeFormat('en-CA', { timeZone: config.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); return p; };
 export const localHHMM = (d: Date) => fmt(d, { hour: '2-digit', minute: '2-digit', hour12: false });
 export const minutesOfDay = (d: Date) => { const [h, m] = localHHMM(d).split(':').map(Number); return h * 60 + m; };
-/** Build a timestamp for a local date + minutes past midnight */
-export const atLocal = (date: string, minutes: number) => new Date(`${date}T00:00:00+05:30`).getTime() + minutes * 60000;
 export const dayLabel = (date: string) => fmt(new Date(`${date}T12:00:00+05:30`), { weekday: 'short', day: 'numeric', month: 'short' });

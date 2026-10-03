@@ -4,7 +4,6 @@ import { jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
 import type { Role } from '@pathwise/core';
 import { audit } from './audit.js';
-import { nowSync } from './clock.js';
 import { config } from './config.js';
 import { one, pool, q } from './db.js';
 import { bad, forbidden, HttpError, locked, unauthorized } from './errors.js';
