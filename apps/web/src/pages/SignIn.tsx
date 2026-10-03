@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type ElementType, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Route, Truck, Tablet, Smartphone, ShoppingBag, Lock, ArrowRight, WifiOff, Check, CheckCircle2, ShieldCheck, User, Delete, Settings2, ArrowLeft, Mail, Eye, EyeOff } from 'lucide-react';
 import { Spinner, ROLE_SOLID } from '../components/ds';
@@ -7,7 +7,7 @@ import { api, post, type User as AppUser } from '../lib/api';
 import { syncClock } from '../lib/clock';
 
 type Key = 'dispatcher' | 'loader' | 'driver' | 'store';
-type Acc = { key: Key; label: string; email: string; name: string; where: string; device: string; icon: React.ElementType; blurb: string };
+type Acc = { key: Key; label: string; email: string; name: string; where: string; device: string; icon: ElementType; blurb: string };
 /* Seeded demo accounts (see README). All use the same password; the loader dock tablet also takes a PIN. */
 const ACCOUNTS: Acc[] = [
   { key: 'dispatcher', label: 'Dispatcher', email: 'dispatcher@pathwise.lk', name: 'Nimal Perera', where: 'Peliyagoda planning office', device: 'Desktop', icon: Truck, blurb: 'Plan, publish and handle exceptions' },

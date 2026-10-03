@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Bell, BellOff, CheckCheck, CheckCircle2, ChevronRight, Clock, Info, KeyRound, LogOut, X } from 'lucide-react';
@@ -70,8 +70,8 @@ function Notifications() {
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
   const startY = useRef<number | null>(null);
-  const onDown = (e: React.PointerEvent) => { if (window.innerWidth >= 640) return; startY.current = e.clientY; setDragging(true); e.currentTarget.setPointerCapture(e.pointerId); };
-  const onMove = (e: React.PointerEvent) => { if (startY.current !== null) setDragY(Math.max(0, e.clientY - startY.current)); };
+  const onDown = (e: ReactPointerEvent) => { if (window.innerWidth >= 640) return; startY.current = e.clientY; setDragging(true); e.currentTarget.setPointerCapture(e.pointerId); };
+  const onMove = (e: ReactPointerEvent) => { if (startY.current !== null) setDragY(Math.max(0, e.clientY - startY.current)); };
   const onUp = () => { if (startY.current === null) return; startY.current = null; setDragging(false); if (dragY > 120) { setOpen(false); } setDragY(0); };
   const q = useApi<any>(['notifications'], '/notifications', { refetchInterval: 15_000 });
   const read = useAct(() => post('/notifications/read', {}), { invalidate: ['notifications'] });
