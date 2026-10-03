@@ -12,15 +12,15 @@
     "dev": "npm run build -w @pathwise/core && concurrently -n api,web -c teal,magenta \"npm run dev -w @pathwise/api\" \"npm run dev -w @pathwise/web\"",
     "test": "npm run test -w @pathwise/core && npm run test -w @pathwise/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "db:migrate": "npm run migrate -w @pathwise/api",
-    "db:seed": "npm run seed -w @pathwise/api",
+    "db:migrate": "npm run build -w @pathwise/core && npm run migrate -w @pathwise/api",
+    "db:seed": "npm run build -w @pathwise/core && npm run seed -w @pathwise/api",
     "start": "npm run start -w @pathwise/api",
     "local": "npm run build && node scripts/local.mjs",
     "local:start": "node scripts/local.mjs",
     "local:dev": "node scripts/local.mjs dev",
-    "db:reset-demo": "npm run cli -w @pathwise/api -- reset",
-    "db:conditions": "npm run cli -w @pathwise/api -- conditions",
-    "admin:set-password": "npm run cli -w @pathwise/api -- set-password"
+    "db:reset-demo": "npm run build -w @pathwise/core && npm run cli -w @pathwise/api -- reset",
+    "db:conditions": "npm run build -w @pathwise/core && npm run cli -w @pathwise/api -- conditions",
+    "admin:set-password": "npm run build -w @pathwise/core && npm run cli -w @pathwise/api -- set-password"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
