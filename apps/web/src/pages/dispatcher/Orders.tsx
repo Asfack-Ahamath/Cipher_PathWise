@@ -39,20 +39,13 @@ export default function Orders() {
   const perOutlet = new Map<string, number>(); for (const o of d.orders) perOutlet.set(o.outletId, (perOutlet.get(o.outletId) ?? 0) + 1);
   return (
     <div className="flex flex-1 min-h-0">
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="relative flex-1 min-w-0 flex flex-col">
         <Toolbar icon={<ClipboardList size={18} />} hue="indigo"
           title={<span className="inline-flex items-center gap-2.5">Order queue <span className="inline-flex items-center gap-1 h-6 px-2 rounded-md bg-slate-100 text-[12px] font-semibold text-slate-600"><Lock size={12} />Closed {ref.data?.operations?.cutoffTime ?? '16:00'}</span></span>}
           subtitle={<span className="flex flex-wrap items-center gap-x-4 gap-y-1">{all.length} confirmed orders for {d.dateLabel} — app and phone orders in one queue <span className="flex gap-3 text-[12px]"><span className="flex items-center gap-1"><Smartphone size={12} />{counts.app} app</span><span className="flex items-center gap-1"><Phone size={12} />{counts.phone} phone</span></span></span>}
-          actions={<><DownloadButton path={`/orders.csv?date=${d.date}`} name={`pathwise-orders-${d.date}.csv`}>Export CSV</DownloadButton><Button variant="primary" icon={<Plus size={15} />} onClick={() => setPhoneOpen(true)}>Add phone order</Button></>}>
-          <Tabs className="mt-4 -mb-4" value={tab} onChange={setTab} items={[
-            { id: 'queue', label: <>Confirmed for {d.dateLabel} <span className="ml-1 text-slate-400 tabular">{all.length}</span></> },
-            { id: 'late', label: <>After cutoff <span className="ml-1 text-slate-400 tabular">{d.afterCutoff.length}</span></> },
-            { id: 'cancelled', label: <>Cancelled <span className="ml-1 text-slate-400 tabular">{d.cancelled?.length ?? 0}</span></> },
-          ]} />
-        </Toolbar>
-        {tab === 'queue' ? (
-          <>
-            <div className="flex-shrink-0 flex flex-wrap items-center gap-3 px-4 sm:px-6 py-3 bg-white border-b border-[#E4E7EC]">
+          actions={<><DownloadButton path={`/orders.csv?date=${d.date}`} name={`pathwise-orders-${d.date}.csv`}>Export CSV</DownloadButton><Button variant="primary" icon={<Plus size={15} />} onClick={() => setPhoneOpen(true)}>Add phone order</Button></>}
+          below={tab === 'queue' ? (
+            <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 py-3 border-t border-[#EEF0F3]">
               <div className="relative w-full sm:w-72">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input value={search} onChange={e => setSearch(e.target.value)} className={`${inputCls} pl-9`} placeholder="Search order, outlet or district" aria-label="Search orders" />
@@ -61,10 +54,19 @@ export default function Orders() {
               <Segmented value={brand} onChange={setBrand} options={[{ id: 'all', label: 'All brands' }, { id: 'Fresh', label: 'Fresh' }, { id: 'Style', label: 'Style' }, { id: 'Tech', label: 'Tech' }]} />
               <span className="ml-auto text-[12px] text-slate-500 tabular">Showing {rows.length} of {all.length}</span>
             </div>
-            <div className="flex-1 min-h-0 overflow-auto bg-white">
+          ) : undefined}>
+          <Tabs className="mt-4 -mb-4" value={tab} onChange={setTab} items={[
+            { id: 'queue', label: <>Confirmed for {d.dateLabel} <span className="ml-1 text-slate-400 tabular">{all.length}</span></> },
+            { id: 'late', label: <>After cutoff <span className="ml-1 text-slate-400 tabular">{d.afterCutoff.length}</span></> },
+            { id: 'cancelled', label: <>Cancelled <span className="ml-1 text-slate-400 tabular">{d.cancelled?.length ?? 0}</span></> },
+          ]} />
+        </Toolbar>
+        {tab === 'queue' ? (
+          <>
+            <div className="flex-1 min-h-0 overflow-auto bg-white pt-[var(--top-h,4rem)]">
               {rows.length === 0 ? <Empty title="No orders match">Try another filter or clear the search.</Empty> : (
                 <table className="w-full min-w-[1080px] border-collapse">
-                  <thead className="sticky top-0 z-10 bg-[#F9FAFB] border-b border-[#E4E7EC]">
+                  <thead className="sticky top-[var(--top-h,0px)] z-[5] bg-[#F9FAFB] border-b border-[#E4E7EC]">
                     <tr>{['Order', 'Outlet', 'Temp', 'Weight', 'Volume', 'Window', 'Access', 'Last served', 'Source', 'Placement'].map(h => <th key={h} className={th}>{h}</th>)}</tr>
                   </thead>
                   <tbody>
@@ -94,7 +96,7 @@ export default function Orders() {
             </div>
           </>
         ) : tab === 'cancelled' ? (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto pt-[var(--top-h,4rem)]">
             <div className="mx-auto max-w-[960px] px-4 sm:px-6 py-6">
               <div className="bg-white rounded-xl border border-[#E6E9F0] divide-y divide-[#EEF0F3]">
                 {(d.cancelled ?? []).length === 0 && <Empty title="No cancelled orders for this day" />}
@@ -109,7 +111,7 @@ export default function Orders() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto pt-[var(--top-h,4rem)]">
             <div className="mx-auto max-w-[960px] px-4 sm:px-6 py-6 space-y-4">
               <Callout icon={<Clock size={15} className="text-slate-500" />}>Orders received after the {ref.data?.operations?.cutoffTime ?? '16:00'} cutoff join the following run. The store is told the new date straight away — these are not deferrals, and nothing is lost.</Callout>
               <div className="bg-white rounded-xl border border-[#E6E9F0] divide-y divide-[#EEF0F3]">
@@ -199,7 +201,7 @@ function PhoneOrder({ onClose, outlets }: { onClose: () => void; outlets: any[] 
             </div>
             <div className="text-[12px] text-slate-500 tabular">{total} units · about {fmt(kg)} kg</div>
           </>}
-          <div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!ot || total === 0 || place.isPending} onClick={() => place.mutate()}>Confirm order</Button></div>
+          <div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!ot || total === 0 || place.isPending} loading={place.isPending} onClick={() => place.mutate()}>Confirm order</Button></div>
         </div>
       )}
     </Modal>
@@ -222,7 +224,7 @@ function EditOrder({ order, onClose }: { order: any; onClose: () => void }) {
           </div>
         ))}
       </div>
-      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!lines.length || save.isPending} onClick={() => save.mutate()}>Save</Button></div>
+      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!lines.length || save.isPending} loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div>
     </Modal>
   );
 }
@@ -234,7 +236,7 @@ function CancelOrder({ order, onClose }: { order: any; onClose: () => void }) {
     <Modal title={`Cancel ${order.id}?`} onClose={onClose} width={440}>
       <p className="text-[13px] text-slate-600 mb-3">{order.outletId} · {order.temp} · {order.units} units. The order is removed from the draft plan and the store is notified.</p>
       <Field label="Reason"><input className={inputCls} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Store called: ordered twice" /></Field>
-      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Keep order</Button><Button variant="danger" disabled={reason.trim().length < 3 || cancel.isPending} onClick={() => cancel.mutate()}>Cancel order</Button></div>
+      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Keep order</Button><Button variant="danger" disabled={reason.trim().length < 3 || cancel.isPending} loading={cancel.isPending} onClick={() => cancel.mutate()}>Cancel order</Button></div>
     </Modal>
   );
 }

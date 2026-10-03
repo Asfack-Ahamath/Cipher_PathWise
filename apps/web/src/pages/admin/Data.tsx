@@ -59,7 +59,7 @@ export default function Data() {
               imp.mutate(await f.text());
             }} />
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant="primary" icon={<FileUp size={14} />} disabled={imp.isPending} onClick={() => file.current?.click()}>{imp.isPending ? 'Checking…' : 'Upload CSV'}</Button>
+              <Button variant="primary" icon={<FileUp size={14} />} disabled={imp.isPending} loading={imp.isPending} onClick={() => file.current?.click()}>{imp.isPending ? 'Checking…' : 'Upload CSV'}</Button>
               {imported && <Button variant="danger" icon={<Trash2 size={14} />} onClick={() => setConfirm('clear')}>Remove import</Button>}
             </div>
           </Card>
@@ -75,7 +75,7 @@ export default function Data() {
       {confirm && (
         <Modal title={confirm === 'clear' ? 'Remove the imported forecast?' : 'Reset the demo day?'} onClose={() => setConfirm(null)} width={420}>
           <p className="text-[13px] text-slate-600">{confirm === 'clear' ? 'The forecast page goes back to the baseline for those weeks.' : 'This clears today’s plan, loading, deliveries, receipts and notifications.'}</p>
-          <div className="mt-6 flex justify-end gap-2"><Button onClick={() => setConfirm(null)}>Cancel</Button><Button variant="danger" disabled={clear.isPending || reset.isPending} onClick={() => (confirm === 'clear' ? clear.mutate() : reset.mutate())}>{confirm === 'clear' ? 'Remove' : 'Reset'}</Button></div>
+          <div className="mt-6 flex justify-end gap-2"><Button onClick={() => setConfirm(null)}>Cancel</Button><Button variant="danger" disabled={clear.isPending || reset.isPending} loading={clear.isPending || reset.isPending} onClick={() => (confirm === 'clear' ? clear.mutate() : reset.mutate())}>{confirm === 'clear' ? 'Remove' : 'Reset'}</Button></div>
         </Modal>
       )}
     </AdminPage>

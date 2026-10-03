@@ -4,6 +4,7 @@ import { Activity, Database, KeyRound, LogOut, Menu, ScrollText, Settings2, Slid
 import { cx } from '../../components/ds';
 import { LiveDot } from '../../components/common';
 import { useAuth } from '../../lib/auth';
+import { SignOutDialog } from '../../components/FieldShell';
 import { useLiveUpdates } from '../../lib/live';
 import Users from './Users';
 import Fleet from './Fleet';
@@ -25,11 +26,13 @@ const NAV: { to: string; label: string; icon: ElementType; end?: boolean }[] = [
 
 /** Administration: people and access, fleet and outlets, planning rules, data imports, audit and health. */
 export default function AdminApp() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const live = useLiveUpdates();
   const [menu, setMenu] = useState(false);
   return (
     <div className="h-[100dvh] flex bg-[#F4F6FA] overflow-hidden">
+      <SignOutDialog open={signOutOpen} onClose={() => setSignOutOpen(false)} />
       {menu && <div className="lg:hidden fixed inset-0 z-40 bg-slate-900/40" onClick={() => setMenu(false)} />}
       <aside className={cx('z-50 w-[240px] flex-shrink-0 flex-col text-slate-300', menu ? 'fixed inset-y-0 left-0 flex' : 'hidden lg:flex')} style={{ background: 'linear-gradient(180deg,#0B1324 0%,#111A3A 100%)' }}>
         <div className="h-16 flex items-center gap-3 px-5">
@@ -52,18 +55,18 @@ export default function AdminApp() {
           <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[12px] font-semibold" style={{ background: 'linear-gradient(135deg,#818CF8,#4F46E5)' }}>{user?.name.split(' ').map(s => s[0]).join('').slice(0, 2)}</div>
           <div className="min-w-0 flex-1"><div className="text-[13px] font-semibold text-white truncate">{user?.name}</div><div className="text-[12px] text-slate-400 truncate">{user?.email}</div></div>
           <NavLink to="/account" className="text-slate-500 hover:text-white" title="Account and password" aria-label="Account and password"><KeyRound size={16} /></NavLink>
-          <button onClick={() => void signOut()} className="text-slate-500 hover:text-white" title="Sign out" aria-label="Sign out"><LogOut size={16} /></button>
+          <button onClick={() => setSignOutOpen(true)} className="text-slate-500 hover:text-white" title="Sign out" aria-label="Sign out"><LogOut size={16} /></button>
         </div>
       </aside>
-      <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-14 flex-shrink-0 flex items-center justify-between gap-3 px-4 lg:px-6 bg-white/85 backdrop-blur border-b border-[#E6E9F0]">
+      <div className="relative flex-1 min-w-0 flex flex-col">
+        <header className="absolute inset-x-0 top-0 z-30 h-14 flex items-center justify-between gap-3 px-4 lg:px-6 glass-bar">
           <div className="flex items-center gap-2">
             <button className="lg:hidden w-9 h-9 flex items-center justify-center rounded-md hover:bg-slate-100" onClick={() => setMenu(true)} aria-label="Open menu"><Menu size={18} /></button>
             <span className="text-[13px] text-slate-500">Changes here apply to everyone immediately and are written to the audit log.</span>
           </div>
           <div className="flex items-center gap-2"><LiveDot state={live} /><NavLink to="/d" className="hidden sm:inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200"><ArrowLeftRight size={13} />Operations</NavLink></div>
         </header>
-        <main className="flex-1 min-h-0 overflow-y-auto">
+        <main className="flex-1 min-h-0 overflow-y-auto pt-14">
           <Routes>
             <Route index element={<Users />} />
             <Route path="fleet" element={<Fleet />} />

@@ -1,7 +1,7 @@
 import { useMemo, useState, type ElementType } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, WifiOff, Package, CheckCircle2, RefreshCw, Wrench, ArrowRight, Store, MapPinOff, Loader2, Scale } from 'lucide-react';
-import { IconChip, Button, Callout, KeyValues, Overline, Pill, Count, Field, inputCls, Empty, cx } from '../../components/ds';
+import { AlertTriangle, WifiOff, Package, CheckCircle2, RefreshCw, Wrench, ArrowRight, Store, MapPinOff, Scale } from 'lucide-react';
+import { Spinner, IconChip, Button, Callout, KeyValues, Overline, Pill, Count, Field, inputCls, Empty, cx } from '../../components/ds';
 import { AuthImage, ErrorState, Loading, useAct, useApi, useReference } from '../../components/common';
 import { post } from '../../lib/api';
 import { hhmm, useNow } from '../../lib/clock';
@@ -85,7 +85,7 @@ export default function Exceptions() {
   return (
     <div className="flex flex-1 min-h-0 flex-col md:flex-row">
       <div className="md:w-[320px] 2xl:w-[360px] max-h-[40vh] md:max-h-none flex-shrink-0 flex flex-col min-h-0 bg-white border-b md:border-b-0 md:border-r border-[#E4E7EC]">
-        <div className="flex-shrink-0 px-5 py-4 border-b border-[#E4E7EC]">
+        <div className="flex-shrink-0 px-5 pb-4 pt-[calc(4rem+1rem)] border-b border-[#E4E7EC]">
           <div className="flex items-center gap-3"><IconChip hue="rose" size={40}><AlertTriangle size={18} /></IconChip><div className="flex-1 min-w-0"><div className="flex items-center justify-between"><h1 className="text-[20px] font-semibold text-slate-900 leading-7">Exceptions</h1><Count n={open.length} tone={open.length ? 'bad' : 'good'} /></div>
             <p className="text-[13px] text-slate-500 truncate">From loaders, drivers and stores · {hhmm(now)}</p></div></div>
         </div>
@@ -98,7 +98,7 @@ export default function Exceptions() {
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 overflow-y-auto bg-[#F4F6FA]">
+      <div className="flex-1 min-w-0 overflow-y-auto bg-[#F4F6FA] pt-16">
         {!sel ? <Empty icon={<CheckCircle2 size={28} />} title="No exceptions yet">Shortfalls from the dock, faults, failed deliveries, sync conflicts and receipt problems land here for a decision.</Empty> : (
           <div className="mx-auto max-w-[1000px] px-4 sm:px-6 py-6">
             <div className="flex flex-wrap items-center gap-2">
@@ -132,7 +132,7 @@ export default function Exceptions() {
                   )}
                   <div className="mt-4"><Field label={options(sel).find(o => o.decision === pick)?.needsNote ? "Why (required)" : "Note (optional)"}><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="Saved to the audit log" /></Field></div>
                   <div className="mt-4 flex justify-end">
-                    <Button variant="primary" icon={resolve.isPending ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />} disabled={!pick || resolve.isPending || (options(sel).find(o => o.decision === pick)?.needsVehicle && !vehicleId) || (options(sel).find(o => o.decision === pick)?.needsNote && note.trim().length < 3)} onClick={() => resolve.mutate({ decision: pick, note: note || undefined, vehicleId: vehicleId || undefined })} data-testid="decide-confirm">Confirm decision</Button>
+                    <Button variant="primary" icon={resolve.isPending ? <Spinner size={15} /> : <ArrowRight size={15} />} disabled={!pick || resolve.isPending || (options(sel).find(o => o.decision === pick)?.needsVehicle && !vehicleId) || (options(sel).find(o => o.decision === pick)?.needsNote && note.trim().length < 3)} loading={resolve.isPending} onClick={() => resolve.mutate({ decision: pick, note: note || undefined, vehicleId: vehicleId || undefined })} data-testid="decide-confirm">Confirm decision</Button>
                   </div>
                 </section>
               )}

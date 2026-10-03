@@ -37,9 +37,9 @@ export default function Forecast() {
   const y = (v: number) => P.t + (H - P.t - P.b) * (1 - v / max);
   const ticks = Array.from({ length: max / step + 1 }, (_, i) => i * step);
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="relative flex flex-col flex-1 min-h-0">
       <Toolbar icon={<BarChart3 size={18} />} hue="violet" title="Capacity forecast" subtitle={`Chilled demand against refrigerated capacity, week by week${depot === 'all' ? '' : ` · ${depot} DC`}`} />
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pt-[var(--top-h,4rem)]">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-6 space-y-6">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Card><Metric label="Chilled demand today" value={todayDemand == null ? '—' : fmt(todayDemand, 1)} unit={todayDemand == null ? '' : 'm³'} hint={todayDemand == null ? 'Shown for all depots' : undefined} /></Card>

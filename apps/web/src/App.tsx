@@ -19,7 +19,7 @@ function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname)}`} replace />;
   if (user.mustChangePassword) return <Navigate to="/account?required=1" replace />;
   if (!roles.includes(user.role)) return <Navigate to={HOME[user.role]} replace />;
-  return <Suspense fallback={<Loading />}>{children}</Suspense>;
+  return <Suspense fallback={<Loading variant="page" />}>{children}</Suspense>;
 }
 
 export default function App() {
@@ -27,7 +27,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={user && !user.mustChangePassword ? <Navigate to={HOME[user.role]} replace /> : <SignIn />} />
-      <Route path="/account" element={user ? <Suspense fallback={<Loading />}><Account /></Suspense> : <Navigate to="/login" replace />} />
+      <Route path="/account" element={user ? <Suspense fallback={<Loading variant="page" />}><Account /></Suspense> : <Navigate to="/login" replace />} />
       <Route path="/a/*" element={<Guard roles={['admin']}><AdminApp /></Guard>} />
       <Route path="/d/*" element={<Guard roles={['dispatcher', 'admin']}><DispatcherApp /></Guard>} />
       <Route path="/l/*" element={<Guard roles={['loader']}><LoaderApp /></Guard>} />

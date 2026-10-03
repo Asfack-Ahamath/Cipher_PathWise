@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Route, Truck, Tablet, Smartphone, ShoppingBag, Lock, ArrowRight, WifiOff, Check, CheckCircle2, ShieldCheck, User, Delete, Loader2, Settings2, ArrowLeft, Mail, Eye, EyeOff } from 'lucide-react';
-import { ROLE_SOLID } from '../components/ds';
+import { Route, Truck, Tablet, Smartphone, ShoppingBag, Lock, ArrowRight, WifiOff, Check, CheckCircle2, ShieldCheck, User, Delete, Settings2, ArrowLeft, Mail, Eye, EyeOff } from 'lucide-react';
+import { Spinner, ROLE_SOLID } from '../components/ds';
 import { HOME, useAuth } from '../lib/auth';
 import { api, post, type User as AppUser } from '../lib/api';
 import { syncClock } from '../lib/clock';
@@ -155,7 +155,7 @@ export default function SignIn() {
           {!pinMode && (
             <button type="submit" disabled={busy} className="mt-3 w-full h-11 rounded-xl text-[15px] font-semibold text-white flex items-center justify-center gap-2 transition hover:brightness-110 active:scale-[.99] disabled:opacity-70"
               style={{ background: ROLE_SOLID[acc.key] }}>
-              {busy ? <Loader2 size={17} className="animate-spin" /> : <>Sign in{cfg?.demoMode !== false && email === acc.email ? ` as ${acc.name.split(' ')[0]}` : ''} <ArrowRight size={17} /></>}
+              {busy ? <Spinner size={17} /> : <>Sign in{cfg?.demoMode !== false && email === acc.email ? ` as ${acc.name.split(' ')[0]}` : ''} <ArrowRight size={17} /></>}
             </button>
           )}
 
@@ -199,7 +199,7 @@ function Forgot({ mode, initial, onBack }: { mode: 'email' | 'admin'; initial: s
           <input type="email" required value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" className="w-full h-11 pl-10 pr-3 text-[14px] rounded-xl bg-white ring-1 ring-[#D0D5DD] outline-none focus:ring-2 focus:ring-teal-600" /></span></label>
       {msg && <div role="status" className="mt-4 px-3.5 py-3 rounded-xl bg-emerald-50 ring-1 ring-emerald-200 text-[13px] text-emerald-900">{msg}</div>}
       {error && <div role="alert" className="mt-4 px-3.5 py-3 rounded-xl bg-red-50 ring-1 ring-red-200 text-[13px] text-red-800">{error}</div>}
-      <button type="submit" disabled={busy || !email} className="mt-6 w-full h-12 rounded-xl text-[15px] font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-60 flex items-center justify-center gap-2">{busy && <Loader2 size={16} className="animate-spin" />}{mode === 'email' ? 'Send reset link' : 'Check what to do'}</button>
+      <button type="submit" disabled={busy || !email} className="mt-6 w-full h-12 rounded-xl text-[15px] font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-60 flex items-center justify-center gap-2">{busy && <Spinner size={16} />}{mode === 'email' ? 'Send reset link' : 'Check what to do'}</button>
     </form>
   );
 }
@@ -226,7 +226,7 @@ function Recover({ onBack, onDone }: { onBack: () => void; onDone: (token: strin
       <label className="block mt-4"><span className="block text-[12px] font-semibold text-slate-700 mb-1.5">Type it again</span>
         <PwInput autoComplete="new-password" value={again} onChange={setAgain} className="w-full h-11 pl-3 pr-10 text-[14px] rounded-xl bg-white ring-1 ring-[#D0D5DD] outline-none focus:ring-2 focus:ring-teal-600" /></label>
       {error && <div role="alert" className="mt-4 px-3.5 py-3 rounded-xl bg-red-50 ring-1 ring-red-200 text-[13px] text-red-800">{error}</div>}
-      <button type="submit" disabled={!ok || busy || !token} className="mt-6 w-full h-12 rounded-xl text-[15px] font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-60 flex items-center justify-center gap-2">{busy && <Loader2 size={16} className="animate-spin" />}Save and sign in</button>
+      <button type="submit" disabled={!ok || busy || !token} className="mt-6 w-full h-12 rounded-xl text-[15px] font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-60 flex items-center justify-center gap-2">{busy && <Spinner size={16} />}Save and sign in</button>
       <button type="button" onClick={onBack} className="mt-3 w-full text-[13px] font-semibold text-slate-600">Back to sign in</button>
     </form>
   );

@@ -171,7 +171,7 @@ function TripLoad() {
           <div className="rounded-xl bg-emerald-50 text-emerald-900 px-4 py-3 text-[14px] font-semibold flex items-center gap-2"><CheckCircle2 size={18} className="text-emerald-600" />{t.status === 'cancelled' ? 'This trip was cancelled in the new plan' : `Released ${t.releasedAt ? hhmm(t.releasedAt) : ''} · the driver can start`}</div>
         ) : <>
           {blockers.length > 0 && <div className="text-[12px] text-slate-500 flex items-start gap-1.5"><Lock size={12} className="mt-0.5" />{blockers.join(' · ')}</div>}
-          <BigButton tone="loader" icon={<Truck size={18} />} disabled={blockers.length > 0 || release.isPending} onClick={() => release.mutate()} data-testid="release">Release vehicle to driver</BigButton>
+          <BigButton tone="loader" icon={<Truck size={18} />} disabled={blockers.length > 0 || release.isPending} loading={release.isPending} onClick={() => release.mutate()} data-testid="release">Release vehicle to driver</BigButton>
         </>}
       </div>
 
@@ -214,7 +214,7 @@ function FlagDialog({ line, tripId, onClose, onSent }: { line: any; tripId: numb
         <Field label="What is short (optional)"><input className={inputCls} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. yoghurt cases" /></Field>
         <Field label="Note (optional)"><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Checked cold room 2" /></Field>
         <Callout tone="info">The dispatcher decides: send what is here, substitute, or hold the vehicle. You can keep loading the other lines.</Callout>
-        <div className="flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="warning" disabled={units >= line.units || send.isPending} onClick={() => send.mutate()} icon={<Flag size={16} />} data-testid="flag-send">Send flag</BigButton></div>
+        <div className="flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="warning" disabled={units >= line.units || send.isPending} loading={send.isPending} onClick={() => send.mutate()} icon={<Flag size={16} />} data-testid="flag-send">Send flag</BigButton></div>
       </div>
     </Modal>
   );
@@ -232,7 +232,7 @@ function FaultDialog({ tripId, onClose }: { tripId: number; onClose: () => void 
         <Segmented value={severity} onChange={setSeverity} options={[{ id: 'blocking', label: 'Cannot leave' }, { id: 'advisory', label: 'Can leave · advisory' }]} />
         <Field label="Note (optional)"><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} /></Field>
         {severity === 'blocking' && <Callout tone="warning">The trip is frozen until the dispatcher swaps the vehicle. You then move every line to the new vehicle.</Callout>}
-        <div className="flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="danger" disabled={send.isPending} onClick={() => send.mutate()} icon={<Wrench size={16} />}>Send</BigButton></div>
+        <div className="flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="danger" disabled={send.isPending} loading={send.isPending} onClick={() => send.mutate()} icon={<Wrench size={16} />}>Send</BigButton></div>
       </div>
     </Modal>
   );
@@ -273,7 +273,7 @@ function SizeDialog({ line, tripId, onClose }: { line: any; tripId: number; onCl
         </div>
         <Field label="Note (optional)"><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Pallets double-stacked" /></Field>
         <Callout tone="info">Small differences are just recorded. If the truck goes over its weight or volume limit, release waits for the dispatcher.</Callout>
-        <div className="flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="loader" disabled={!ok || send.isPending} onClick={() => send.mutate()} icon={<Scale size={16} />}>Save size</BigButton></div>
+        <div className="flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="loader" disabled={!ok || send.isPending} loading={send.isPending} onClick={() => send.mutate()} icon={<Scale size={16} />}>Save size</BigButton></div>
       </div>
     </Modal>
   );

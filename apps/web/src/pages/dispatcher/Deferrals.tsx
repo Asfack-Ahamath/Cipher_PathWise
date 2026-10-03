@@ -43,14 +43,14 @@ export default function Deferrals() {
 
   return (
     <div className="flex flex-1 min-h-0">
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="relative flex-1 min-w-0 flex flex-col">
         <Toolbar icon={<CalendarClock size={18} />} hue="amber" title="Deferrals"
           subtitle={all.length ? `${all.length} orders move from ${d.dateLabel} · ${forced.length} forced, ${chosen.length} chosen · every one has a reason code` : `No deferrals for ${d.dateLabel} yet`}
           actions={published.length > 0 ? <span className="inline-flex items-center gap-1.5 h-9 px-3 rounded-md bg-emerald-50 text-emerald-800 text-[13px] font-semibold ring-1 ring-emerald-200"><CheckCircle2 size={15} />{published.length} stores told · {acked} acknowledged</span> : proposals.length ? <Button variant="primary" icon={<KanbanSquare size={15} />} onClick={() => nav('/d/plan')}>Publish from the plan board</Button> : undefined}>
           <Tabs className="mt-4 -mb-4" value={tab} onChange={setTab} items={[{ id: 'today', label: <>Today's decisions <span className="ml-1 text-slate-400 tabular">{all.length}</span></> }, { id: 'history', label: 'History and audit' }]} />
         </Toolbar>
         {tab === 'today' ? (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto pt-[var(--top-h,4rem)]">
             <div className="mx-auto max-w-[1100px] px-4 sm:px-6 py-6 space-y-6">
               {d.protectedOutlets.length > 0 && <Callout tone="success" icon={<ShieldCheck size={15} className="text-emerald-600" />} title="Repeat-skip protection">
                 {d.protectedOutlets.length} outlets deferred on the last run are served first today — {d.protectedOutlets.join(', ')}. The planner puts them at the top so no outlet is skipped two runs in a row.
@@ -63,7 +63,7 @@ export default function Deferrals() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto pt-[var(--top-h,4rem)]">
             <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-6 space-y-3">
               <div className="bg-white rounded-xl border border-[#E6E9F0] overflow-x-auto">
                 <table className="w-full min-w-[860px]">
@@ -91,7 +91,7 @@ export default function Deferrals() {
 
       {sel && selOut && tab === 'today' && (
         <aside className="w-[360px] 2xl:w-[400px] flex-shrink-0 hidden lg:flex flex-col min-h-0 bg-white border-l border-[#E4E7EC]">
-          <div className="flex-shrink-0 px-5 py-4 border-b border-[#E4E7EC]">
+          <div className="flex-shrink-0 px-5 pb-4 pt-[calc(4rem+1rem)] border-b border-[#E4E7EC]">
             <div className="font-mono text-[12px] text-slate-500">{sel.orderId}</div>
             <div className="text-[16px] font-semibold text-slate-900 mt-0.5">{selOut.name}</div>
             <div className="flex flex-wrap items-center gap-1.5 mt-2.5"><BrandTag brand={selOut.brand} /><TempTag temp={sel.temp} /><OutletBadges o={selOut} /></div>
@@ -125,7 +125,7 @@ export default function Deferrals() {
             </div>
           </div>
           <div className="flex-shrink-0 p-4 border-t border-[#E4E7EC] flex gap-2">
-            {sel.proposed && <Button className="flex-1" variant="primary" disabled={change.isPending || (curReason === 'other' && !(noteEdit[sel.key] ?? '').trim())} onClick={() => change.mutate({ orderId: sel.orderId, reason: curReason, why: (noteEdit[sel.key] ?? '').trim() || sel.why })}>Save reason</Button>}
+            {sel.proposed && <Button className="flex-1" variant="primary" disabled={change.isPending || (curReason === 'other' && !(noteEdit[sel.key] ?? '').trim())} loading={change.isPending} onClick={() => change.mutate({ orderId: sel.orderId, reason: curReason, why: (noteEdit[sel.key] ?? '').trim() || sel.why })}>Save reason</Button>}
             <Button className={sel.proposed ? '' : 'flex-1'} icon={<KanbanSquare size={15} />} onClick={() => nav('/d/plan')}>Try to serve</Button>
           </div>
         </aside>

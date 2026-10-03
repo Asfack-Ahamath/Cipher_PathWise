@@ -85,7 +85,7 @@ export default function Overview() {
   const brandsTotal = o.orders.byBrand.reduce((a: number, b: any) => a + b.n, 0) || 1;
   const fleetHue: Hue[] = ['sky', 'indigo', 'violet', 'teal'];
   return (
-    <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 py-6 space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 pt-[calc(4rem+1.5rem)] pb-6 space-y-6">
       <section className="bg-white rounded-2xl border border-[#E6E9F0] shadow-[0_1px_2px_rgba(16,24,40,.04)] overflow-hidden grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
         <div className="p-6 flex gap-5" style={{ background: '#F0FDFA' }}>
           <div className="hidden sm:block self-start w-[68px] flex-shrink-0 rounded-xl overflow-hidden bg-white ring-1 ring-[#E4E7EC] shadow-[0_6px_16px_-10px_rgba(15,23,42,.35)] text-center">

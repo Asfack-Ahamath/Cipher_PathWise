@@ -64,7 +64,7 @@ function VehicleDialog({ v, onClose }: { v: any; onClose: () => void }) {
         <Field label="Weekly fuel quota (L)"><input className={inputCls} type="number" min={1} value={f.fuelQuotaL} onChange={e => setF({ ...f, fuelQuotaL: e.target.value })} /></Field>
       </div>
       <p className="mt-4 text-[12px] text-slate-500">A vehicle on the road cannot be sent to the workshop from here — report a fault on its trip so the dispatcher can swap it.</p>
-      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={invalid || save.isPending} onClick={() => save.mutate()}>Save</Button></div>
+      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={invalid || save.isPending} loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div>
     </Modal>
   );
 }

@@ -17,10 +17,10 @@ export default function PeakDay() {
   const p = q.data;
   const s = p.summary;
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="relative flex flex-col flex-1 min-h-0">
       <Toolbar icon={<FlaskConical size={18} />} hue="indigo" title="Peak-day lab · Task 2B (S1)" subtitle={`${p.depot} · ${s.orders} orders · ${s.fleetAvailable} of ${s.fleetListed} listed vehicles available`}
         actions={<DownloadButton path="/peak-day.csv" name="submission_task2b.csv">Download submission CSV</DownloadButton>} />
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pt-[var(--top-h,4rem)]">
         <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-6 space-y-6">
           {p.feasibility.passed
             ? <Callout tone="success" icon={<CheckCircle2 size={16} className="text-emerald-600" />} title="Feasible under every official rule">Checked with the same rules as check_allocation.py: vehicle availability and depot, refrigeration for chilled orders, van-only outlets, one brand and one district per trip, weight and volume limits, at most two trips per vehicle, and the trip-time budgets (270 min Fresh, 480 min Style/Tech). Planned in {p.ms} ms.</Callout>

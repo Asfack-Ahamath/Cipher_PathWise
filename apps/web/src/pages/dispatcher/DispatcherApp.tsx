@@ -6,6 +6,7 @@ import { Button, Modal, Segmented, Field, inputCls, cx } from '../../components/
 import { useAct, useApi, useToast } from '../../components/common';
 import { post, put } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { SignOutDialog } from '../../components/FieldShell';
 import { dayLabel, hhmm, syncClock, useNow } from '../../lib/clock';
 import Overview from './Overview';
 import Orders from './Orders';
@@ -32,7 +33,7 @@ export default function DispatcherApp() {
     <DepotCtx.Provider value={depot}>
       <div className="h-[100dvh] flex bg-[#F4F6FA] overflow-hidden">
         <Sidebar mobileOpen={mobileNav} onClose={() => setMobileNav(false)} />
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="relative flex-1 min-w-0 flex flex-col">
           <TopNav depot={depot} setDepot={setDepot} onMenu={() => setMobileNav(true)} live={live} clockOpen={clockOpen} setClockOpen={setClockOpen} />
           <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <Routes>
@@ -55,7 +56,8 @@ export default function DispatcherApp() {
 }
 
 function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const ov = useApi<any>(['overview'], '/overview', { refetchInterval: 20_000 });
   const ex = useApi<any[]>(['exceptions'], '/exceptions', { refetchInterval: 15_000 });
   const openEx = (ex.data ?? []).filter(e => e.status === 'open').length;
@@ -134,10 +136,11 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
               <div className="text-[12px] text-slate-400">{user?.role === 'admin' ? 'Administrator' : 'Dispatcher'} · both depots</div>
             </div>
             <NavLink to="/account" className={`${expanded ? 'flex' : 'hidden'} text-slate-500 hover:text-white`} aria-label="Account and password" title="Account and password"><KeyRound size={16} /></NavLink>
-            <button onClick={() => void signOut()} className={`${expanded ? 'flex' : 'hidden'} text-slate-500 hover:text-white`} aria-label="Sign out" title="Sign out"><LogOut size={16} /></button>
+            <button onClick={() => setSignOutOpen(true)} className={`${expanded ? 'flex' : 'hidden'} text-slate-500 hover:text-white`} aria-label="Sign out" title="Sign out"><LogOut size={16} /></button>
           </div>
         </div>
       </aside>
+      <SignOutDialog open={signOutOpen} onClose={() => setSignOutOpen(false)} />
     </>
   );
 }
@@ -154,7 +157,7 @@ function TopNav({ depot, setDepot, onMenu, live, clockOpen, setClockOpen }: { de
   const unread = notes.data?.unread ?? 0;
   const TONE: Record<string, [string, string]> = { grey: ['#F1F5F9', '#475569'], green: ['#ECFDF5', '#047857'], amber: ['#FFFBEB', '#B45309'], blue: ['#EEF2FF', '#4338CA'], red: ['#FEF2F2', '#B91C1C'], violet: ['#F5F3FF', '#6D28D9'] };
   return (
-    <header className="relative z-30 h-16 flex-shrink-0 flex items-center justify-between gap-3 px-4 lg:px-6 bg-white/85 backdrop-blur border-b border-[#E6E9F0]">
+    <header className="absolute inset-x-0 top-0 z-30 h-16 flex items-center justify-between gap-3 px-4 lg:px-6 bg-white/60 backdrop-blur-2xl backdrop-saturate-150 border-b-[0.5px] border-black/10 shadow-[0_1px_0_rgba(255,255,255,.6)_inset]">
       <div className="flex items-center gap-3 min-w-0">
         <button className="lg:hidden w-9 h-9 flex items-center justify-center rounded-md hover:bg-slate-100" onClick={onMenu} aria-label="Open menu"><Menu size={18} /></button>
         <div className="hidden sm:block"><Segmented size="sm" value={depot} onChange={setDepot} options={[{ id: 'all', label: 'All depots' }, { id: 'Peliyagoda', label: 'Peliyagoda' }, { id: 'Kandy', label: 'Kandy' }]} /></div>
@@ -241,11 +244,11 @@ function ClockDialog({ onClose, planDate }: { onClose: () => void; planDate?: st
       </div>
       <div className="mt-6 flex items-center justify-between gap-2">
         {confirmReset
-          ? <Button variant="danger" icon={<RotateCcw size={14} />} disabled={reset.isPending} onClick={() => reset.mutate()}>Confirm reset</Button>
+          ? <Button variant="danger" icon={<RotateCcw size={14} />} disabled={reset.isPending} loading={reset.isPending} onClick={() => reset.mutate()}>Confirm reset</Button>
           : <Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => setConfirmReset(true)}>Reset demo day</Button>}
         <div className="flex gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={set.isPending} onClick={() => set.mutate(`${date}T${time}:00+05:30`)}>Set clock</Button>
+          <Button variant="primary" disabled={set.isPending} loading={set.isPending} onClick={() => set.mutate(`${date}T${time}:00+05:30`)}>Set clock</Button>
         </div>
       </div>
       {confirmReset && <p className="mt-3 text-[12px] text-red-700">Reset clears today's plan, loading, deliveries and receipts, and puts the clock back to 02:30.</p>}
