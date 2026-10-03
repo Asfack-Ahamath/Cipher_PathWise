@@ -20,6 +20,8 @@ export const CATEGORIES = {
   Style: { ambient: [{ k: 'Casualwear (cartons)', kg: 14, m3: 0.28 }, { k: 'Denim and trousers (cartons)', kg: 22, m3: 0.32 }, { k: 'Footwear (boxes)', kg: 16, m3: 0.36 }, { k: 'Hanging garments (rails)', kg: 9, m3: 0.45 }] },
   Tech: { ambient: [{ k: 'Double-door refrigerators', kg: 95, m3: 0.85 }, { k: '65" TVs', kg: 38, m3: 0.45 }, { k: 'Front-load washing machines', kg: 72, m3: 0.55 }, { k: 'Small appliances (cartons)', kg: 8, m3: 0.06 }] },
 } as const;
+type Category = { k: string; kg: number; m3: number };
+type CategoryTable = Record<string, Partial<Record<string, readonly Category[]>> | undefined>;
 
 const dayBefore = (d: string) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); };
 async function cutoffFor(delivery: string) {
@@ -53,7 +55,7 @@ export const OrderBody = z.object({
 export const OrderEditBody = z.object({ lines: z.array(Line).min(1).max(20), note: z.string().trim().max(300).optional() });
 
 function sizeLines(brand: string, temp: string, lines: z.infer<typeof Line>[]) {
-  const cats = (CATEGORIES as any)[brand]?.[temp] as { k: string; kg: number; m3: number }[] | undefined;
+  const cats = (CATEGORIES as CategoryTable)[brand]?.[temp];
   if (!cats) throw bad(temp === 'chilled' ? 'Only Fresh outlets order chilled goods.' : 'This outlet cannot order these goods.');
   let units = 0, kg = 0, m3 = 0;
   const seen = new Set<string>();
@@ -170,7 +172,7 @@ export async function storeOverview(outletId: string) {
     toConfirm, receiptConfirmHours: operations.receiptConfirmHours,
     upcoming: await Promise.all(upcoming.map(async o => ({ ...o, dateLabel: dayLabel(o.date), editable: now < await cutoffFor(o.date) }))),
     window,
-    categories: (CATEGORIES as any)[ot.brand],
+    categories: (CATEGORIES as CategoryTable)[ot.brand],
   };
 }
 
