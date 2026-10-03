@@ -123,7 +123,7 @@ function UserDialog({ user, me, onClose, onSecret }: { user: any | null; me?: nu
       )}
       <div className="mt-6 flex justify-end gap-2">
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={save.isPending || !f.name.trim() || (isNew && !f.email.trim())} onClick={() => save.mutate()}>{isNew ? 'Create account' : 'Save changes'}</Button>
+        <Button variant="primary" disabled={save.isPending || !f.name.trim() || (isNew && !f.email.trim())} loading={save.isPending} onClick={() => save.mutate()}>{isNew ? 'Create account' : 'Save changes'}</Button>
       </div>
     </Modal>
   );

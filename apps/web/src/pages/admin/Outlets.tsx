@@ -58,7 +58,7 @@ function OutletDialog({ o, onClose }: { o: any; onClose: () => void }) {
         <Field label="Status"><select className={inputCls} value={f.isActive ? '1' : '0'} onChange={e => setF({ ...f, isActive: e.target.value === '1' })}><option value="1">Active</option><option value="0">Inactive (no orders, not planned)</option></select></Field>
       </div>
       {bad && <p className="mt-3 text-[12px] text-red-700">{bad}</p>}
-      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!!bad || save.isPending || !f.name.trim()} onClick={() => save.mutate()}>Save</Button></div>
+      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!!bad || save.isPending || !f.name.trim()} loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div>
     </Modal>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Home, ShoppingCart, CalendarClock, ClipboardCheck, History, Truck, CheckCircle2, Clock, WifiOff, Snowflake, Package, Minus, Plus, AlertTriangle, PartyPopper, Wallet, CloudRain, Camera, PenLine, Lock, Timer, Construction, Pencil, Ban, X, ImagePlus } from 'lucide-react';
 import { FieldHeader, BigButton } from '../../components/FieldShell';
 import { Callout, Segmented, Modal, Field, inputCls, Empty, Pill, cx } from '../../components/ds';
@@ -20,24 +20,19 @@ const TABS = [
 
 export default function StoreApp() {
   useLiveUpdates();
+  const { pathname } = useLocation();
+  const activeIdx = Math.max(0, TABS.findIndex(t => t.end ? pathname === t.to : pathname.startsWith(t.to)));
   const q = useApi<any>(['store'], '/store/overview', { refetchInterval: 30_000 });
   const o = q.data;
   const badge: Record<string, number> = o ? { '/s/receipt': o.toConfirm.length, '/s/deferrals': o.deferrals.filter((d: any) => !d.acknowledgedAt).length } : {};
   return (
     <div className="min-h-[100dvh] bg-[#F4F6FA] flex justify-center">
-      <div className="w-full max-w-[960px] h-[100dvh] bg-white flex flex-col shadow-[0_0_0_1px_#E6E9F0]">
+      <div className="relative w-full max-w-[1100px] h-[100dvh] bg-white flex flex-col shadow-[0_0_0_1px_#E6E9F0]">
         <FieldHeader role="store" title={o?.outlet.name.replace(/ · OUT\d+$/, '') ?? 'Store'} subtitle={o ? `${o.outlet.id} · ${o.outlet.district} · ${o.dateLabel}` : '…'}>
-          <nav className="hidden sm:flex px-3 gap-1" aria-label="Store">
-            {TABS.map(t => (
-              <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => cx('h-10 px-3 rounded-t-lg text-[13px] font-semibold inline-flex items-center gap-1.5', isActive ? 'bg-white text-[#C2410C]' : 'text-white/85 hover:bg-white/10')}>
-                <t.icon size={15} />{t.label}{badge[t.to] ? <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center">{badge[t.to]}</span> : null}
-              </NavLink>
-            ))}
-          </nav>
         </FieldHeader>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-[calc(92px+env(safe-area-inset-bottom))]">
           {q.isLoading ? <Loading /> : q.error ? <ErrorState error={q.error} retry={q.refetch} /> : (
-            <Routes>
+            <div key={pathname} className="anim-page"><Routes>
               <Route index element={<Today o={o} />} />
               <Route path="track" element={<Navigate to="/s" replace />} />
               <Route path="order" element={<Order o={o} />} />
@@ -45,19 +40,35 @@ export default function StoreApp() {
               <Route path="deferrals" element={<Notices o={o} />} />
               <Route path="history" element={<HistoryView />} />
               <Route path="*" element={<Navigate to="/s" replace />} />
-            </Routes>
+            </Routes></div>
           )}
         </div>
-        <nav className="sm:hidden flex-shrink-0 grid grid-cols-5 border-t border-[#E4E7EC] bg-white safe-bottom" aria-label="Store">
-          {TABS.map(t => (
-            <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => cx('relative h-14 flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold', isActive ? 'text-[#C2410C]' : 'text-slate-500')}>
-              <t.icon size={19} />{t.label}
-              {badge[t.to] ? <span className="absolute top-1.5 left-1/2 ml-2 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center">{badge[t.to]}</span> : null}
-            </NavLink>
-          ))}
-        </nav>
+        <GlassTabs activeIdx={activeIdx} badge={badge} />
       </div>
     </div>
+  );
+}
+
+/* Liquid-glass tab bar: a floating pill pinned to the bottom on every screen size (centred and capped in width on tablets).
+   One glass capsule slides behind the active tab. */
+function GlassTabs({ activeIdx, badge }: { activeIdx: number; badge: Record<string, number> }) {
+  return (
+    <nav
+      className="absolute inset-x-3 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[560px] z-30 grid grid-cols-5 gap-0.5 p-1.5 rounded-[32px] glass"
+      style={{ bottom: 'max(12px, env(safe-area-inset-bottom))' }} aria-label="Store">
+      <span aria-hidden="true" className="absolute top-1.5 bottom-1.5 left-1.5 rounded-[26px] bg-white/75 shadow-[inset_0_0_0_1px_rgba(255,255,255,.9),0_2px_10px_rgba(15,23,42,.12)] transition-transform duration-[420ms] ease-[cubic-bezier(.3,1.25,.4,1)]" style={{ width: 'calc((100% - 12px - 8px) / 5)', transform: `translateX(calc(${activeIdx} * (100% + 2px)))` }} />
+      {TABS.map(t => (
+        <NavLink key={t.to} to={t.to} end={t.end} className={({ isActive }) => cx('relative z-10 flex flex-col items-center justify-center gap-[2px] py-1.5 rounded-[26px] text-[10px] sm:text-[11px] font-semibold select-none transition-[color,transform] duration-300 active:scale-90', isActive ? 'text-[#C2410C]' : 'text-slate-600 hover:text-slate-900')}>
+          {({ isActive }) => (
+            <>
+              <t.icon size={23} strokeWidth={isActive ? 2.3 : 1.8} />
+              {t.label}
+              {badge[t.to] ? <span className="absolute top-0.5 left-1/2 ml-2 min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF3B30] text-white text-[11px] font-semibold leading-none flex items-center justify-center ring-2 ring-white/80">{badge[t.to]}</span> : null}
+            </>
+          )}
+        </NavLink>
+      ))}
+    </nav>
   );
 }
 
@@ -160,7 +171,7 @@ function EditOrder({ order, cats, onClose }: { order: any; cats: any[]; onClose:
         ))}
       </div>
       <p className="mt-3 text-[12px] text-slate-500">You can change it until the cutoff the day before delivery.</p>
-      <div className="mt-5 flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="store" disabled={!lines.length || save.isPending} onClick={() => save.mutate()}>Save changes</BigButton></div>
+      <div className="mt-5 flex gap-2"><BigButton tone="secondary" onClick={onClose}>Cancel</BigButton><BigButton tone="store" disabled={!lines.length || save.isPending} loading={save.isPending} onClick={() => save.mutate()}>Save changes</BigButton></div>
     </Modal>
   );
 }
@@ -172,7 +183,7 @@ function CancelOrder({ order, onClose }: { order: any; onClose: () => void }) {
     <Modal title={`Cancel ${order.id}?`} onClose={onClose} width={440}>
       <p className="text-[13px] text-slate-600 mb-3">{order.dateLabel} · {order.temp} · {order.units} units. The dispatcher is told.</p>
       <Field label="Why are you cancelling?"><input className={inputCls} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Ordered twice by mistake" /></Field>
-      <div className="mt-5 flex gap-2"><BigButton tone="secondary" onClick={onClose}>Keep it</BigButton><BigButton tone="danger" disabled={reason.trim().length < 3 || go.isPending} onClick={() => go.mutate()}>Cancel order</BigButton></div>
+      <div className="mt-5 flex gap-2"><BigButton tone="secondary" onClick={onClose}>Keep it</BigButton><BigButton tone="danger" disabled={reason.trim().length < 3 || go.isPending} loading={go.isPending} onClick={() => go.mutate()}>Cancel order</BigButton></div>
     </Modal>
   );
 }
@@ -219,7 +230,7 @@ function Order({ o }: { o: any }) {
         ))}
       </div>
       <div className="rounded-xl bg-slate-50 px-4 py-3 text-[13px] text-slate-700 flex justify-between tabular"><span>{total} units</span><span>≈ {fmt(kg)} kg · {fmt(m3, 1)} m³</span></div>
-      <BigButton tone="store" disabled={!total || place.isPending} icon={<ShoppingCart size={18} />} onClick={() => place.mutate()} data-testid="place-order">Place order for {o.window.deliveryLabel}</BigButton>
+      <BigButton tone="store" disabled={!total || place.isPending} loading={place.isPending} icon={<ShoppingCart size={18} />} onClick={() => place.mutate()} data-testid="place-order">Place order for {o.window.deliveryLabel}</BigButton>
       <p className="text-[12px] text-slate-500">Orders placed after {o.window.cutoffTime} go on the following delivery day. One chilled and one ambient order per day — change an existing order from Today. You'll get a message if anything changes.</p>
     </div>
   );
@@ -295,7 +306,7 @@ function Receive({ o }: { o: any }) {
         </div>
       </div>
       <Field label="Note (optional)"><textarea className={`${inputCls} h-auto py-2`} rows={2} value={note} onChange={e => setNote(e.target.value)} /></Field>
-      <BigButton tone="store" disabled={send.isPending || needsProof} icon={<ClipboardCheck size={18} />} onClick={() => send.mutate()} data-testid="confirm-receipt">{issues ? `Send receipt with ${issues} issue${issues > 1 ? 's' : ''}` : 'Confirm everything arrived'}</BigButton>
+      <BigButton tone="store" disabled={send.isPending || needsProof} loading={send.isPending} icon={<ClipboardCheck size={18} />} onClick={() => send.mutate()} data-testid="confirm-receipt">{issues ? `Send receipt with ${issues} issue${issues > 1 ? 's' : ''}` : 'Confirm everything arrived'}</BigButton>
       {pod && <PodView orderId={pod} onClose={() => setPod(null)} />}
     </div>
   );

@@ -244,7 +244,7 @@ export default function DriverApp() {
         {screen.k === 'summary' && <SummaryScreen stops={stops} stopState={stopState} pendingFor={pendingFor} pending={box.pending.length} onClose={async unrecorded => { await act('trip_closed', null, unrecorded.length ? { unrecorded } : {}, 'Trip closed'); setScreen({ k: 'run' }); }} />}
       </div>
       {online && box.pending.length > 0 && !box.syncing && (
-        <div className="flex-shrink-0 p-3 border-t border-[#E4E7EC] bg-white safe-bottom"><BigButton tone="secondary" icon={<RefreshCw size={16} />} onClick={() => doSync(true)}>Send {box.pending.length} waiting records now</BigButton></div>
+        <div className="flex-shrink-0 px-3 pt-2 anim-rise" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}><div className="glass rounded-[32px] p-1.5"><BigButton tone="secondary" className="!rounded-full !bg-white/70 !ring-white/80" icon={<RefreshCw size={16} />} onClick={() => doSync(true)}>Send {box.pending.length} waiting records now</BigButton></div></div>
       )}
     </Shell>
   );

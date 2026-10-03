@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, Download, ImageOff, Info, Loader2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, ImageOff, Info, X } from 'lucide-react';
 import { api, ApiError, download, fetchBlob } from '../lib/api';
 import { STATUS } from './StatusChip';
-import { cx } from './ds';
+import { Spinner, cx } from './ds';
 
 /* ── Toasts ── */
 type ToastT = { id: number; tone: 'success' | 'error' | 'info'; text: string };
@@ -64,8 +64,15 @@ export function useOutlets() {
 }
 
 /* ── States ── */
-export function Loading({ label = 'Loading…', className }: { label?: string; className?: string }) {
-  return <div className={cx('flex items-center justify-center gap-2 py-16 text-[13px] text-slate-500', className)}><Loader2 size={16} className="animate-spin" />{label}</div>;
+/* The one loading state. Default fills its container; `page` centres it on the whole screen; `inline` is a small spinner + label. */
+export function Loading({ label = 'Loading…', className, variant = 'block' }: { label?: string; className?: string; variant?: 'block' | 'page' | 'inline' }) {
+  if (variant === 'inline') return <span className={cx('inline-flex items-center gap-2 text-[13px] text-slate-500', className)}><Spinner size={14} />{label}</span>;
+  return (
+    <div className={cx('flex flex-col items-center justify-center gap-3 text-[13px] text-slate-500', variant === 'page' ? 'min-h-[100dvh]' : 'py-16', className)} role="status" aria-live="polite">
+      <Spinner size={28} className="text-teal-700" />
+      <span>{label}</span>
+    </div>
+  );
 }
 export function ErrorState({ error, retry }: { error: unknown; retry?: () => void }) {
   return (
@@ -117,7 +124,7 @@ export function AuthImage({ src, alt, className }: { src: string | null | undefi
   }, [src]);
   if (!src) return null;
   if (state.error) return <div className={cx('flex items-center justify-center gap-1.5 bg-slate-50 text-[12px] text-slate-500 rounded-lg', className)}><ImageOff size={14} />Photo unavailable</div>;
-  if (!state.url) return <div className={cx('flex items-center justify-center bg-slate-50 rounded-lg', className)}><Loader2 size={16} className="animate-spin text-slate-400" /></div>;
+  if (!state.url) return <div className={cx('flex items-center justify-center bg-slate-50 rounded-lg', className)}><Spinner size={16} className="text-slate-400" /></div>;
   return <a href={state.url} target="_blank" rel="noreferrer"><img src={state.url} alt={alt} className={cx('object-cover rounded-lg', className)} /></a>;
 }
 
@@ -128,7 +135,7 @@ export function DownloadButton({ path, name, children, className }: { path: stri
   return (
     <button type="button" disabled={busy} className={cx('inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-[13px] font-semibold text-slate-700 bg-white ring-1 ring-[#D0D5DD] hover:bg-slate-50 disabled:opacity-60', className)}
       onClick={async () => { setBusy(true); try { await download(path, name); } catch (e: any) { toast('error', e.message); } finally { setBusy(false); } }}>
-      {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}{children}
+      {busy ? <Spinner size={14} /> : <Download size={14} />}{children}
     </button>
   );
 }

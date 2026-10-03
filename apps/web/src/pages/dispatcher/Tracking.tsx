@@ -49,9 +49,9 @@ export default function Tracking() {
   const online = list.filter(t => !t.offline).length;
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
+    <div className="under-nav flex flex-1 min-h-0 flex-col lg:flex-row">
       <div className="lg:w-[300px] 2xl:w-[340px] max-h-[40vh] lg:max-h-none flex-shrink-0 flex flex-col min-h-0 bg-white border-b lg:border-b-0 lg:border-r border-[#E4E7EC]">
-        <div className="flex-shrink-0 px-5 pt-4 pb-3 border-b border-[#E4E7EC]">
+        <div className="flex-shrink-0 px-5 pt-[calc(4rem+1rem)] pb-3 border-b border-[#E4E7EC]">
           <div className="flex items-center gap-3"><IconChip hue="sky" size={40}><MapPin size={18} /></IconChip>
             <div><h1 className="text-[20px] font-semibold text-slate-900 leading-7">Live tracking</h1>
               <p className="text-[13px] text-slate-500">{online} of {list.length} trips in contact · {hhmm(now)}</p></div></div>
@@ -96,7 +96,7 @@ export default function Tracking() {
 
       {sel && (
         <aside className="lg:w-[380px] flex-shrink-0 flex flex-col min-h-0 bg-white border-t lg:border-t-0 lg:border-l border-[#E4E7EC] max-h-[60vh] lg:max-h-none">
-          <div className="flex-shrink-0 px-5 py-4 border-b border-[#E4E7EC]">
+          <div className="flex-shrink-0 px-5 pb-4 pt-[calc(4rem+1rem)] border-b border-[#E4E7EC]">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5"><IconChip hue={sel.vehicle.temp === 'reefer' ? 'sky' : 'slate'} size={36}>{sel.vehicle.temp === 'reefer' ? <Snowflake size={16} /> : <Truck size={16} />}</IconChip>
                 <div><div className="text-[16px] font-semibold text-slate-900">{sel.vehicleId} · Trip {sel.trip}</div><div className="text-[12px] text-slate-500">{sel.driverName} · {sel.brand} {sel.district}</div></div></div>
@@ -192,7 +192,7 @@ function MoveStop({ tripId, outletId, onClose }: { tripId: number; outletId: str
           {pick !== 'keep' && <Field label="Reason (the driver, the loader and the store see it)" hint="The goods are picked again from depot stock and loaded on the new vehicle."><input className={inputCls} value={text} onChange={e => setReason(e.target.value)} placeholder="e.g. VEH041 held by a road closure; the store would miss its window" /></Field>}
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>{pick === 'keep' ? 'Keep it' : 'Cancel'}</Button>
-            {pick !== 'keep' && <Button variant="primary" disabled={!chosen || text.trim().length < 3 || move.isPending} onClick={() => chosen && move.mutate({ outletId, to: { vehicleId: chosen.vehicleId, trip: chosen.trip }, reason: text.trim() })}>Move to {chosen?.vehicleId}</Button>}
+            {pick !== 'keep' && <Button variant="primary" disabled={!chosen || text.trim().length < 3 || move.isPending} loading={move.isPending} onClick={() => chosen && move.mutate({ outletId, to: { vehicleId: chosen.vehicleId, trip: chosen.trip }, reason: text.trim() })}>Move to {chosen?.vehicleId}</Button>}
           </div>
         </div>
       )}

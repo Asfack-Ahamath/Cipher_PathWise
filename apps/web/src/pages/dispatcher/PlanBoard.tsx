@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { KanbanSquare, ChevronDown, Package, AlertTriangle, XCircle, Snowflake, Search, Truck, Wand2, RotateCcw, X, CheckCircle2, Send, Clock, ShieldCheck, ListChecks, Loader2, MoreVertical, History } from 'lucide-react';
+import { KanbanSquare, ChevronDown, Package, AlertTriangle, XCircle, Snowflake, Search, Truck, Wand2, RotateCcw, X, CheckCircle2, Send, Clock, ShieldCheck, ListChecks, MoreVertical, History } from 'lucide-react';
 import CapacityBar from '../../components/CapacityBar';
 import { TempTag, OutletBadges, BRAND_COLOR } from '../../components/tags';
 import { Toolbar, Button, Callout, Segmented, Pill, Modal, Count, inputCls, Overline, IconChip, HUE, cx, Field } from '../../components/ds';
@@ -107,7 +107,7 @@ export default function PlanBoard() {
 
   const validation = (
     <>
-      <div className="flex-shrink-0 px-5 h-14 border-b border-[#E4E7EC] flex items-center justify-between">
+      <div className="flex-shrink-0 px-5 pt-[var(--top-h,4rem)] box-content h-14 border-b border-[#E4E7EC] flex items-center justify-between">
         <h2 className="text-[14px] font-semibold text-slate-900 flex items-center gap-2"><ListChecks size={16} className="text-slate-500" />Validation</h2>
         <div className="flex items-center gap-2">
           <Pill label={errors ? `${errors} violation${errors === 1 ? '' : 's'}` : 'All rules pass'} color={errors ? '#B91C1C' : '#047857'} bg={errors ? '#FEE2E2' : '#D1FAE5'} />
@@ -132,13 +132,13 @@ export default function PlanBoard() {
   );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="relative flex flex-col flex-1 min-h-0">
       <Toolbar icon={<KanbanSquare size={18} />} hue="teal"
         title={<span className="inline-flex flex-wrap items-center gap-3">Plan board {statusPill}</span>}
         subtitle={`${v.dateLabel} · assisted planning — let Auto-plan build it, then move orders by hand; every change is re-checked`}
         actions={<>
-          {v.mode === 'draft' && <Button icon={<RotateCcw size={15} />} disabled={discard.isPending} onClick={() => discard.mutate()}>{v.published ? 'Discard changes' : 'Discard draft'}</Button>}
-          <Button icon={auto.isPending ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />} className="!border-teal-600 !text-teal-800" disabled={auto.isPending} onClick={() => auto.mutate()} data-testid="auto-plan">Auto-plan</Button>
+          {v.mode === 'draft' && <Button icon={<RotateCcw size={15} />} loading={discard.isPending} onClick={() => discard.mutate()}>{v.published ? 'Discard changes' : 'Discard draft'}</Button>}
+          <Button icon={<Wand2 size={15} />} className="!border-teal-600 !text-teal-800" loading={auto.isPending} onClick={() => auto.mutate()} data-testid="auto-plan">Auto-plan</Button>
           <Button icon={<History size={15} />} onClick={() => setVersionsOpen(true)}>Versions</Button>
           <Button className="2xl:hidden" icon={<ListChecks size={15} />} onClick={() => setShowVal(true)}>Validation {errors > 0 && <Count n={errors} tone="bad" />}</Button>
           <Button variant="primary" disabled={!canPublish} onClick={() => setConfirm(true)} title={canPublish ? undefined : v.mode !== 'draft' ? 'Nothing new to publish' : `Resolve ${errors} violation${errors === 1 ? '' : 's'} first`} data-testid="publish">Publish plan</Button>
@@ -157,7 +157,7 @@ export default function PlanBoard() {
       <div className="flex flex-1 min-h-0 flex-col md:flex-row">
         {/* Unassigned */}
         <div className="md:w-[300px] 2xl:w-[340px] max-h-[45vh] md:max-h-none flex-shrink-0 flex flex-col min-h-0 bg-[#F9FAFB] border-b md:border-b-0 md:border-r border-[#E4E7EC]">
-          <div className="flex-shrink-0 px-4 py-3.5 bg-white border-b border-[#E4E7EC] space-y-3">
+          <div className="flex-shrink-0 px-4 pb-3.5 pt-[calc(var(--top-h,4rem)+0.875rem)] bg-white border-b border-[#E4E7EC] space-y-3">
             <div className="flex items-center justify-between"><h2 className="text-[14px] font-semibold text-slate-900">Not on a trip</h2><Count n={unassignedAll.length} tone={unassignedAll.length ? 'warn' : 'good'} /></div>
             <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} className={`${inputCls} pl-9`} placeholder="Order or outlet ID" aria-label="Search unassigned" /></div>
             <Segmented size="sm" value={filter} onChange={setFilter} options={[{ id: 'all', label: 'All' }, { id: 'Fresh', label: 'Fresh' }, { id: 'Style', label: 'Style' }, { id: 'Tech', label: 'Tech' }]} />
@@ -198,12 +198,12 @@ export default function PlanBoard() {
         </div>
 
         {/* Vehicles */}
-        <div className="flex-1 min-w-0 overflow-y-auto @container">
+        <div className="flex-1 min-w-0 overflow-y-auto @container pt-[var(--top-h,4rem)]">
           <div className="mx-auto max-w-[1280px] p-4 sm:p-5 space-y-4">
             {v.mode === 'live' && <Callout tone="success" title={`Plan v${v.published.version} is live`}>Loaders, drivers and stores are working from it. Any change here opens a new draft; when you republish, everyone affected gets a "what changed" list. Trips already released or on the road are locked.</Callout>}
             {v.mode === 'draft' && v.published && <Callout tone="warning" title="You are editing a new version">Nobody sees these changes until you publish. Trips already released stay as they are.</Callout>}
             {lastStats && v.mode === 'draft' && <Callout tone="info" title={`Auto-plan result: ${lastStats.served} of ${lastStats.orders} orders served on ${lastStats.trips} trips`}>Chilled demand {fmt(lastStats.chilledDemandM3, 1)} m³, served {fmt(lastStats.chilledServedM3, 1)} m³ on {lastStats.reeferTrips} reefer trips. {lastStats.deferred} orders are proposed for deferral, each with a reason on the left.</Callout>}
-            {trips.length === 0 && <div className="rounded-xl border border-dashed border-[#D0D5DD] bg-white p-10 text-center"><Wand2 size={26} className="mx-auto text-teal-600" /><div className="mt-2 text-[14px] font-semibold text-slate-900">No trips yet</div><p className="text-[13px] text-slate-500 mt-1">Auto-plan builds a full plan for {v.dateLabel} in about a second.</p><Button className="mt-4" variant="primary" icon={<Wand2 size={15} />} disabled={auto.isPending} onClick={() => auto.mutate()}>Run auto-plan</Button></div>}
+            {trips.length === 0 && <div className="rounded-xl border border-dashed border-[#D0D5DD] bg-white p-10 text-center"><Wand2 size={26} className="mx-auto text-teal-600" /><div className="mt-2 text-[14px] font-semibold text-slate-900">No trips yet</div><p className="text-[13px] text-slate-500 mt-1">Auto-plan builds a full plan for {v.dateLabel} in about a second.</p><Button className="mt-4" variant="primary" icon={<Wand2 size={15} />} loading={auto.isPending} onClick={() => auto.mutate()}>Run auto-plan</Button></div>}
             {[...new Set(trips.map(t => t.vehicleId))].map(vid => {
               const veh = vehicles.get(vid)!;
               const pv = v.usage[vid] ?? { fresh: 0, styleTech: 0, fuelAddL: 0, trips: 0, freshBudget: 270, styleTechBudget: 480 };
@@ -313,7 +313,7 @@ export default function PlanBoard() {
               </div>
               <div className="flex justify-end gap-2">
                 <Button onClick={() => setConfirm(false)}>Cancel</Button>
-                <Button variant="primary" icon={publish.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} disabled={publish.isPending} onClick={() => publish.mutate()} data-testid="publish-confirm">Publish and notify</Button>
+                <Button variant="primary" icon={<Send size={15} />} loading={publish.isPending} onClick={() => publish.mutate()} data-testid="publish-confirm">Publish and notify</Button>
               </div>
             </div>
           ) : (

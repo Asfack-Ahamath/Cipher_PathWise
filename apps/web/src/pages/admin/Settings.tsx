@@ -65,7 +65,7 @@ function Group({ k, title, icon, defs, value, note }: { k: 'rules' | 'operations
       </div>
       <div className="mt-5 flex justify-end gap-2">
         {dirty && <Button onClick={() => setF(value)}>Undo changes</Button>}
-        <Button variant="primary" icon={<Save size={14} />} disabled={!dirty || Object.values(errors).some(Boolean) || save.isPending} onClick={() => save.mutate()}>Save</Button>
+        <Button variant="primary" icon={<Save size={14} />} disabled={!dirty || Object.values(errors).some(Boolean) || save.isPending} loading={save.isPending} onClick={() => save.mutate()}>Save</Button>
       </div>
     </Card>
   );

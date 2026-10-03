@@ -5,10 +5,23 @@
    Spacing: 4 / 8 / 12 / 16 / 24 / 32. Radius: 6 controls,
    8 cards, 12 sheets, full chips. One border colour: #E4E7EC.
    ──────────────────────────────────────────────────────────── */
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react';
 
 const cx = (...c: (string | false | undefined | null)[]) => c.filter(Boolean).join(' ');
+
+/* ── Loading primitives: one spinner and one skeleton block for the whole app ── */
+export function Spinner({ size = 16, className }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={cx('animate-spin flex-shrink-0', className)} role="status" aria-label="Loading">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.2" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cx('rounded-md bg-slate-200/70 animate-pulse', className)} aria-hidden="true" />;
+}
 
 /* ── Button ── */
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning';
@@ -26,11 +39,12 @@ const S: Record<Size, string> = {
   lg: 'h-11 px-4 text-[14px] gap-2 rounded-lg',
   xl: 'h-14 px-5 text-[16px] gap-2 rounded-xl',
 };
-export function Button({ variant = 'secondary', size = 'md', icon, full, className, children, ...rest }:
-  ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size; icon?: ReactNode; full?: boolean }) {
+export function Button({ variant = 'secondary', size = 'md', icon, full, loading, className, children, ...rest }:
+  ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size; icon?: ReactNode; full?: boolean; loading?: boolean }) {
+  /* While loading the button keeps its colour (not the greyed disabled look) but ignores clicks. */
   return (
-    <button {...rest} className={cx('inline-flex items-center justify-center font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed', V[variant], S[size], full && 'w-full', className)}>
-      {icon}{children}
+    <button {...rest} disabled={rest.disabled && !loading} aria-busy={loading || undefined} onClick={loading ? undefined : rest.onClick} className={cx('inline-flex items-center justify-center font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed', V[variant], S[size], full && 'w-full', loading && 'pointer-events-none', className)}>
+      {loading ? <Spinner size={size === 'sm' ? 13 : 15} /> : icon}{children}
     </button>
   );
 }
@@ -70,19 +84,39 @@ export function PageHeader({ title, subtitle, actions, children, icon, hue = 'te
     </header>
   );
 }
+/* A header pinned over the top of a page so content scrolls underneath it, blurred. It measures itself and publishes its
+   height (plus the 64 px top nav when navOffset) as --top-h on its parent, which must be `relative`; scroll panes in that
+   parent add `pt-[var(--top-h,4rem)]` so their first row starts below it. */
+export function GlassHeader({ children, className, navOffset = false }: { children: ReactNode; className?: string; navOffset?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current, parent = el?.parentElement;
+    if (!el || !parent) return;
+    const set = () => parent.style.setProperty('--top-h', `${el.offsetHeight + (navOffset ? 64 : 0)}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => { ro.disconnect(); parent.style.removeProperty('--top-h'); };
+  }, [navOffset]);
+  return <div ref={ref} className={cx('absolute inset-x-0 z-10 glass-bar', navOffset ? 'top-16' : 'top-0', className)}>{children}</div>;
+}
+
 /* Full-height split views (queue, board, tracking, exceptions) use a toolbar strip instead */
-export function Toolbar({ title, subtitle, actions, children, icon, hue = 'teal' }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode; icon?: ReactNode; hue?: Hue }) {
+export function Toolbar({ title, subtitle, actions, children, icon, hue = 'teal', below }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode; icon?: ReactNode; hue?: Hue; below?: ReactNode }) {
   return (
-    <div className="flex-shrink-0 bg-white border-b border-[#E4E7EC] px-6 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0 flex items-center gap-3">{icon && <IconChip hue={hue} size={40}>{icon}</IconChip>}<div className="min-w-0">
-          <h1 className="text-[20px] font-semibold text-slate-900 leading-7 tracking-[-0.01em]">{title}</h1>
-          {subtitle && <p className="text-[13px] text-slate-500 leading-5">{subtitle}</p>}
-        </div></div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    <GlassHeader navOffset>
+      <div className="px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0 flex items-center gap-3">{icon && <IconChip hue={hue} size={40}>{icon}</IconChip>}<div className="min-w-0">
+            <h1 className="text-[20px] font-semibold text-slate-900 leading-7 tracking-[-0.01em]">{title}</h1>
+            {subtitle && <p className="text-[13px] text-slate-500 leading-5">{subtitle}</p>}
+          </div></div>
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        </div>
+        {children}
       </div>
-      {children}
-    </div>
+      {below}
+    </GlassHeader>
   );
 }
 

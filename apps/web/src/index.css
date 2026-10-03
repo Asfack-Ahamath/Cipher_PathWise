@@ -3,7 +3,8 @@
 
 /* Pathwise design tokens */
 @theme inline {
-  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, 'Segoe UI', sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   --color-teal-50: #f0fdfa;
@@ -56,3 +57,29 @@ body { margin: 0; }
 .leaflet-container { font-family: var(--font-sans); background: #EEF2F6; }
 .pw-pin { display:flex; align-items:center; justify-content:center; border-radius:9999px; color:#fff; font-weight:700; font-size:11px; border:2px solid #fff; box-shadow:0 2px 6px rgba(15,23,42,.35); }
 .safe-bottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+
+@keyframes sheet-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.anim-sheet-in { animation: sheet-in .22s cubic-bezier(.2,.8,.2,1); }
+.anim-fade-in { animation: fade-in .18s ease-out; }
+
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes pop-in { from { transform: scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
+.anim-pop-in { animation: pop-in .2s cubic-bezier(.2,.9,.3,1.2); }
+@media (max-width: 639px) { .anim-sheet-in { animation: sheet-up .3s cubic-bezier(.2,.8,.2,1); } }
+/* Liquid-glass surface: heavy blur + saturation, bright inner edge, soft drop shadow. */
+.glass { background: rgba(255,255,255,.62); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.65), 0 8px 32px rgba(15,23,42,.16), 0 1px 3px rgba(15,23,42,.08); }
+
+/* Large iOS-style titles: display face, tight tracking. */
+.ios-title { font-family: var(--font-display); letter-spacing: -0.022em; font-weight: 700; }
+@keyframes rise-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.anim-rise { animation: rise-in .38s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes page-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.anim-page { animation: page-in .28s cubic-bezier(.2,.8,.2,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Translucent header that content scrolls under (see GlassHeader). Leaflet controls clear the top bar inside .under-nav. */
+.glass-bar { background: rgba(255,255,255,.62); -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%); border-bottom: .5px solid rgba(15,23,42,.12); }
+.under-nav .leaflet-top { margin-top: 4.25rem; }
