@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Search, Store } from 'lucide-react';
-import { Button, Card, Field, Modal, cx, inputCls } from '../../components/ds';
+import { Button, Card, Field, Modal, cx, inputCls, thCls } from '../../components/ds';
 import { ErrorState, Loading, useAct, useApi } from '../../components/common';
 import { BrandTag, DockBadge } from '../../components/tags';
 import { patch } from '../../lib/api';
@@ -19,7 +19,7 @@ export default function Outlets() {
       <Card pad={false}>
         <div className="overflow-x-auto max-h-[70vh]">
           <table className="w-full min-w-[920px] text-[13px]">
-            <thead className="sticky top-0 bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Outlet', 'Brand', 'District', 'Depot', 'Window', 'Access', 'Manager', 'Status', ''].map(h => <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10">{h}</th>)}</tr></thead>
+            <thead className="sticky top-0 bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Outlet', 'Brand', 'District', 'Depot', 'Window', 'Access', 'Manager', 'Status', ''].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
             <tbody>
               {rows.map(o => (
                 <tr key={o.id} className={cx('border-t border-[#EEF0F3]', !o.isActive && 'opacity-60')}>

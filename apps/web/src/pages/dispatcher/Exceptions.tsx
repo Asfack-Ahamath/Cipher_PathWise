@@ -1,7 +1,7 @@
 import { useMemo, useState, type ElementType } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, WifiOff, Package, CheckCircle2, RefreshCw, Wrench, ArrowRight, Store, MapPinOff, Scale } from 'lucide-react';
-import { Spinner, IconChip, Button, Callout, KeyValues, Overline, Pill, Count, Field, inputCls, Empty, cx } from '../../components/ds';
+import { Spinner, IconChip, Button, Callout, KeyValues, Overline, Pill, PILL_TONE, Count, Field, inputCls, Empty, cx } from '../../components/ds';
 import { AuthImage, ErrorState, Loading, useAct, useApi, useReference } from '../../components/common';
 import { post } from '../../lib/api';
 import { hhmm, useNow } from '../../lib/clock';
@@ -103,7 +103,7 @@ export default function Exceptions() {
           <div className="mx-auto max-w-[1000px] px-4 sm:px-6 py-6">
             <div className="flex flex-wrap items-center gap-2">
               {(() => { const m = TYPE_META[sel.type] ?? TYPE_META.road_problem; const I = m.icon; return <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[12px] font-semibold" style={{ color: m.color, background: m.bg }}><I size={13} />{m.label}</span>; })()}
-              {sel.status === 'open' ? <Pill label="Open" color="#B91C1C" bg="#FEE2E2" /> : <Pill label="Resolved" color="#047857" bg="#D1FAE5" icon={<CheckCircle2 size={12} />} />}
+              {sel.status === 'open' ? <Pill label="Open" color="#B91C1C" bg="#FEE2E2" /> : <Pill label="Resolved" {...PILL_TONE.success} icon={<CheckCircle2 size={12} />} />}
               <span className="text-[12px] text-slate-500 tabular">EX-{sel.id} · {hhmm(sel.raisedAt)}</span>
             </div>
             <h2 className="text-[20px] font-semibold text-slate-900 leading-7 mt-2">{sel.title}</h2>

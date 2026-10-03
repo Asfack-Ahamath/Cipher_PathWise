@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useRef, useState, type ButtonHTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Bell, BellOff, CheckCheck, CheckCircle2, ChevronRight, Clock, Info, KeyRound, LogOut, X } from 'lucide-react';
@@ -155,7 +155,7 @@ function Notifications() {
 }
 
 /* Big touch button used across field apps (min 48 px, 56 px for the main action). */
-export function BigButton({ children, onClick, disabled, loading, tone = 'primary', icon, className, type = 'button', ...rest }: { children: ReactNode; onClick?: () => void; disabled?: boolean; loading?: boolean; tone?: 'primary' | 'secondary' | 'danger' | 'warning' | 'driver' | 'loader' | 'store'; icon?: ReactNode; className?: string; type?: 'button' | 'submit'; [k: string]: any }) {
+export function BigButton({ children, onClick, disabled, loading, tone = 'primary', icon, className, type = 'button', ...rest }: { children: ReactNode; onClick?: () => void; disabled?: boolean; loading?: boolean; tone?: 'primary' | 'secondary' | 'danger' | 'warning' | 'driver' | 'loader' | 'store'; icon?: ReactNode; className?: string; type?: 'button' | 'submit' } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children' | 'onClick' | 'disabled' | 'className' | 'type'>) {
   const styles: Record<string, string> = {
     primary: 'bg-teal-700 text-white hover:bg-teal-800', driver: 'bg-[#1D4ED8] text-white hover:bg-[#1E40AF]', loader: 'bg-[#6D28D9] text-white hover:bg-[#5B21B6]', store: 'bg-[#C2410C] text-white hover:bg-[#9A3412]',
     secondary: 'bg-white text-slate-800 ring-1 ring-[#D0D5DD] hover:bg-slate-50', danger: 'bg-white text-red-700 ring-1 ring-red-200 hover:bg-red-50', warning: 'bg-amber-600 text-white hover:bg-amber-700',

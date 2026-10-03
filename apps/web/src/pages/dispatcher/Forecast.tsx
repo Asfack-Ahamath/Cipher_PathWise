@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { BarChart3, Info, Wallet, PartyPopper, CloudRain, Snowflake } from 'lucide-react';
-import { Toolbar, Card, CardHeader, Callout, Metric, IconChip, cx } from '../../components/ds';
+import { Toolbar, Card, CardHeader, Callout, Metric, IconChip, cx, thCls } from '../../components/ds';
 import { ErrorState, Loading, useApi, fmt } from '../../components/common';
 import { dayLabel } from '../../lib/clock';
 import { useDepot } from './DispatcherApp';
@@ -81,7 +81,7 @@ export default function Forecast() {
           <Card pad={false}>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[960px] text-[13px]">
-                <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Week', 'Source', 'Dates', 'Operating days', 'Calendar', 'All volume', 'Chilled demand', 'Capacity', 'Gap'].map(h => <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10">{h}</th>)}</tr></thead>
+                <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Week', 'Source', 'Dates', 'Operating days', 'Calendar', 'All volume', 'Chilled demand', 'Capacity', 'Gap'].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
                 <tbody>
                   {weeks.map(w => (
                     <tr key={w.week} className="border-t border-[#EEF0F3]">
