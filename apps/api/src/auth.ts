@@ -7,6 +7,7 @@ import { audit } from './audit.js';
 import { config } from './config.js';
 import { one, pool, q } from './db.js';
 import { bad, forbidden, HttpError, locked, unauthorized } from './errors.js';
+import { BCRYPT_COST, MS_PER_MINUTE } from './lib/constants.js';
 import { getSettings } from './lib/settings.js';
 import { sbPasswordLogin, sbRecoverPassword, sbSendRecovery, sbUpdateUser, SupabaseError } from './lib/supabase.js';
 
@@ -44,14 +45,14 @@ async function issue(u: any) {
 
 async function recordFailure(u: any, ip: string) {
   const fails = (u.failed_logins ?? 0) + 1;
-  const lockUntil = fails >= MAX_FAILS ? new Date(Date.now() + LOCK_MIN * 60000) : null;
+  const lockUntil = fails >= MAX_FAILS ? new Date(Date.now() + LOCK_MIN * MS_PER_MINUTE) : null;
   await q(`UPDATE users SET failed_logins = $2, locked_until = coalesce($3, locked_until) WHERE id = $1`, [u.id, lockUntil ? 0 : fails, lockUntil]);
   await audit(pool, u.id, lockUntil ? 'auth.locked' : 'auth.login_failed', `user:${u.id}`, { ip });
 }
 function assertUsable(u: any) {
   if (!u.is_active) throw forbidden('This account is disabled. Ask an administrator.');
   if (u.locked_until && new Date(u.locked_until).getTime() > Date.now()) {
-    const min = Math.ceil((new Date(u.locked_until).getTime() - Date.now()) / 60000);
+    const min = Math.ceil((new Date(u.locked_until).getTime() - Date.now()) / MS_PER_MINUTE);
     throw locked(`Too many wrong passwords. Try again in ${min} minute${min === 1 ? '' : 's'}.`);
   }
 }
@@ -122,7 +123,7 @@ export const requireRole = (...roles: Role[]) => async (req: FastifyRequest, rep
 };
 
 /* ── password management ── */
-export async function hashPassword(pw: string) { return bcrypt.hash(pw, 12); }
+export async function hashPassword(pw: string) { return bcrypt.hash(pw, BCRYPT_COST); }
 
 export async function changeOwnPassword(userId: number, current: string, next: string, ip = '') {
   const parsed = PasswordPolicy.safeParse(next);

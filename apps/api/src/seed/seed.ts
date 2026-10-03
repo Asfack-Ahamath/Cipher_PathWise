@@ -4,6 +4,7 @@ import { CALENDAR_ROWS, DEMO_DAY, generateDemoOrders, ROAD_DISRUPTION, SKIPPED_Y
 import { config } from '../config.js';
 import { one, q, tx, type Db } from '../db.js';
 import { setClock } from '../clock.js';
+import { BCRYPT_COST } from '../lib/constants.js';
 import { sbEnsureUser } from '../lib/supabase.js';
 import { invalidateSettings } from '../lib/settings.js';
 import { invalidateConditions } from '../services/network.js';
@@ -106,10 +107,10 @@ export async function seedUsers(db: Db, log: (m: string) => void = step) {
       try { authId = (await sbEnsureUser(u.email, password, u.role)).id; }
       catch (e: any) { throw new Error(`Could not create the Supabase Auth user ${u.email}: ${e.message}`); }
     }
-    const hash = config.authProvider === 'supabase' ? null : await bcrypt.hash(password, 12);
+    const hash = config.authProvider === 'supabase' ? null : await bcrypt.hash(password, BCRYPT_COST);
     await q(`INSERT INTO users (email,name,role,password_hash,pin_hash,depot,outlet_id,vehicle_id,auth_user_id,must_change_password) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       ON CONFLICT (email) DO UPDATE SET auth_user_id = coalesce(EXCLUDED.auth_user_id, users.auth_user_id)`,
-      [u.email.toLowerCase(), u.name, u.role, hash, u.pin ? await bcrypt.hash(u.pin, 12) : null, u.depot, u.outlet, u.vehicle, authId, mustChange], db);
+      [u.email.toLowerCase(), u.name, u.role, hash, u.pin ? await bcrypt.hash(u.pin, BCRYPT_COST) : null, u.depot, u.outlet, u.vehicle, authId, mustChange], db);
   }
   log(`accounts: ${people.length}${config.authProvider === 'supabase' ? ' (linked to Supabase Auth)' : ''}`);
 }

@@ -2,6 +2,7 @@ import { audit, notify } from '../audit.js';
 import { dayLabel, nowSync } from '../clock.js';
 import { z } from 'zod';
 import { one, pool, q, tx, type Db } from '../db.js';
+import { MS_PER_MINUTE } from '../lib/constants.js';
 import { getSettings } from '../lib/settings.js';
 import type { AuthUser } from '../auth.js';
 import { bad, conflict, notFound } from '../errors.js';
@@ -46,7 +47,7 @@ async function assertLoaderTrip(tripId: number, depot: string | null, userId?: n
 async function assertClaim(tripId: number, userId: number, db?: Db) {
   const s = await one<any>(`SELECT s.user_id, s.heartbeat_at, u.name FROM loading_sessions s JOIN users u ON u.id = s.user_id WHERE s.trip_id = $1`, [tripId], db);
   if (!s || s.user_id === userId) return;
-  const quietMin = (nowSync().getTime() - new Date(s.heartbeat_at).getTime()) / 60000;
+  const quietMin = (nowSync().getTime() - new Date(s.heartbeat_at).getTime()) / MS_PER_MINUTE;
   const limit = (await getSettings()).operations.loaderClaimMinutes;
   if (quietMin < limit) throw conflict(`${s.name} is loading this trip on another tablet. Take over only if they have stopped.`, { holder: s.name }, 'TRIP_CLAIMED');
 }

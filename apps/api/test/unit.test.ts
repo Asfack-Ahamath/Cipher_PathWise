@@ -6,6 +6,14 @@ import { bad, conflict, forbidden, locked, notFound, unauthorized, HttpError } f
 import { hashPassword, PasswordPolicy } from '../src/auth.js';
 import { DateParam, IdParam, parse } from '../src/routes/util.js';
 import { localDate, localHHMM, minutesOfDay } from '../src/clock.js';
+import { BCRYPT_COST, MS_PER_MINUTE } from '../src/lib/constants.js';
+
+describe('shared constants', () => {
+  it('keep their documented values', () => {
+    expect(MS_PER_MINUTE).toBe(60000);
+    expect(BCRYPT_COST).toBe(12);
+  });
+});
 
 describe('error helpers', () => {
   it('map to the expected HTTP statuses', () => {

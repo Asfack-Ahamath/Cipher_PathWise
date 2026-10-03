@@ -4,6 +4,7 @@ import { audit, notify } from '../audit.js';
 import { minutesOfDay, nowSync } from '../clock.js';
 import { one, q, tx } from '../db.js';
 import { bad } from '../errors.js';
+import { MS_PER_MINUTE } from '../lib/constants.js';
 import { saveAttachment } from '../lib/storage.js';
 import type { AuthUser } from '../auth.js';
 import { activePlanDate, loadNetwork } from './network.js';
@@ -89,7 +90,7 @@ async function applyEvent(user: AuthUser, ev: Ev) {
   // a phone clock far in the future is a bug or tampering; keep the record but use the server time
   const serverNow = nowSync();
   const at0 = new Date(ev.deviceTime);
-  const at = at0.getTime() > serverNow.getTime() + 10 * 60000 ? serverNow : at0;
+  const at = at0.getTime() > serverNow.getTime() + 10 * MS_PER_MINUTE ? serverNow : at0;
   return tx(async c => {
     const t = await one<any>(`SELECT t.*, to_char(t.plan_date,'YYYY-MM-DD') AS d FROM trips t WHERE t.id = $1`, [ev.tripId], c);
     if (!t) throw bad('Trip not found.');

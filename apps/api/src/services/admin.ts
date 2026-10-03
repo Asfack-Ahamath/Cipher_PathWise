@@ -7,6 +7,7 @@ import { forgetUser, hashPassword, PasswordPolicy, type AuthUser } from '../auth
 import { config } from '../config.js';
 import { one, pool, q, tx } from '../db.js';
 import { bad, conflict, HttpError, notFound } from '../errors.js';
+import { BCRYPT_COST } from '../lib/constants.js';
 import { getSettings, OperationsSchema, RulesSchema, saveSettings } from '../lib/settings.js';
 import { sbCreateUser, sbFindUserByEmail, sbHealth, sbSendRecovery, sbUpdateUser, SupabaseError } from '../lib/supabase.js';
 import { parseCsv } from '../seed/datasets.js';
@@ -113,7 +114,7 @@ export async function createUser(admin: AuthUser, body: z.infer<typeof UserCreat
   const u = await tx(async c => {
     const r = await one<any>(`INSERT INTO users (email, name, role, depot, outlet_id, vehicle_id, phone, password_hash, pin_hash, auth_user_id, must_change_password)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-      [body.email, body.name, body.role, scope.depot, scope.outletId, scope.vehicleId, body.phone ?? null, config.authProvider === 'supabase' ? null : await hashPassword(password), body.pin ? await bcrypt.hash(body.pin, 12) : null, authId, mustChange], c);
+      [body.email, body.name, body.role, scope.depot, scope.outletId, scope.vehicleId, body.phone ?? null, config.authProvider === 'supabase' ? null : await hashPassword(password), body.pin ? await bcrypt.hash(body.pin, BCRYPT_COST) : null, authId, mustChange], c);
     await audit(c, admin.id, 'user.create', `user:${r.id}`, { email: body.email, role: body.role, ...scope });
     return r;
   });
@@ -180,7 +181,7 @@ export async function resetPin(admin: AuthUser, id: number, body: z.infer<typeof
   if (pin) await assertPinFree(pin, u.depot, id);
   else for (let i = 0; i < 20 && !pin; i++) { const p = String(randomInt(1000, 10000)); try { await assertPinFree(p, u.depot, id); pin = p; } catch { /* try another */ } }
   if (!pin) throw conflict('Could not find a free PIN. Enter one.');
-  await q(`UPDATE users SET pin_hash = $2, token_version = token_version + 1 WHERE id = $1`, [id, await bcrypt.hash(pin, 12)]);
+  await q(`UPDATE users SET pin_hash = $2, token_version = token_version + 1 WHERE id = $1`, [id, await bcrypt.hash(pin, BCRYPT_COST)]);
   forgetUser(id);
   await audit(pool, admin.id, 'user.pin_reset', `user:${id}`);
   return { pin };
