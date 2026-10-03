@@ -57,11 +57,6 @@ export function useAct<A = void, R = any>(fn: (a: A) => Promise<R>, opts: { succ
 export function useReference() {
   return useApi<any>(['reference'], '/reference', { staleTime: 5 * 60_000 });
 }
-export function useOutlets() {
-  const r = useReference();
-  const map = new Map<string, any>((r.data?.outlets ?? []).map((o: any) => [o.id, o]));
-  return map;
-}
 
 /* ── States ── */
 /* The one loading state. Default fills its container; `page` centres it on the whole screen; `inline` is a small spinner + label. */
@@ -98,7 +93,6 @@ export function Status({ s, size = 'md' }: { s: string; size?: 'sm' | 'md' }) {
 }
 
 export const fmt = (n: number | null | undefined, d = 0) => n == null ? '—' : Number(n).toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
-export const shortOutlet = (name?: string) => (name ?? '').replace(/^Waypoint (Fresh|Style|Tech) /, '').replace(/ · OUT\d+$/, '');
 
 /* ── Live-update indicator ── */
 export function LiveDot({ state }: { state: 'connecting' | 'live' | 'offline' }) {

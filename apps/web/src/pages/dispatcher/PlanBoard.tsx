@@ -5,7 +5,7 @@ import CapacityBar from '../../components/CapacityBar';
 import { TempTag, OutletBadges, BRAND_COLOR } from '../../components/tags';
 import { Toolbar, Button, Callout, Segmented, Pill, Modal, Count, inputCls, Overline, IconChip, HUE, cx, Field } from '../../components/ds';
 import { ErrorState, Loading, Status, useAct, useApi, useReference, useToast, fmt } from '../../components/common';
-import { del, post, ApiError } from '../../lib/api';
+import { del, post } from '../../lib/api';
 import { dayLabel, hhmm } from '../../lib/clock';
 import { useDepot } from './DispatcherApp';
 
@@ -62,7 +62,7 @@ export default function PlanBoard() {
     },
   });
   const discard = useAct(() => del(`/plans/${date}/draft`), { invalidate: inv, success: 'Draft discarded' });
-  const publish = useAct(() => post(`/plans/${date}/publish`), { invalidate: inv, onDone: r => setPublished(r), onError: (e: ApiError) => { setConfirm(false); setShowVal(true); } });
+  const publish = useAct(() => post(`/plans/${date}/publish`), { invalidate: inv, onDone: r => setPublished(r), onError: () => { setConfirm(false); setShowVal(true); } });
 
   if (!date || q.isLoading) return <Loading />;
   if (q.error) return <ErrorState error={q.error} retry={q.refetch} />;

@@ -1,27 +1,5 @@
-import type { ReactNode } from 'react';
-
-interface Props {
-  label: string;
-  color: string;
-  bg: string;
-  icon?: ReactNode;
-  size?: 'sm' | 'md';
-}
-
-export default function StatusChip({ label, color, bg, icon, size = 'md' }: Props) {
-  const pad = size === 'sm' ? 'px-1.5 py-0.5 text-[11px]' : 'px-2 py-1 text-[12px]';
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full font-semibold leading-none ${pad}`}
-      style={{ color, background: bg }}
-    >
-      {icon && <span className="flex-shrink-0">{icon}</span>}
-      {label}
-    </span>
-  );
-}
-
-/* One status language for every role (order lifecycle + connectivity) */
+/* One status language for every role (order lifecycle + connectivity).
+   Offline is grey, never red: red means a rule is broken. */
 export const STATUS = {
   confirmed:  { color: '#1D4ED8', bg: '#DBEAFE', label: 'Confirmed' },
   planned:    { color: '#4338CA', bg: '#E0E7FF', label: 'Planned' },
@@ -44,6 +22,3 @@ export const STATUS = {
   synced:     { color: '#15803D', bg: '#DCFCE7', label: 'Synced' },
   conflict:   { color: '#92400E', bg: '#FEF3C7', label: 'Sync conflict' },
 };
-
-/* Offline is grey (#6B7280) everywhere — never red. Red means a rule is broken. */
-export const OFFLINE_GREY = '#6B7280';

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, WifiOff, MapPin, Search, Snowflake, Truck, ArrowRightLeft, CheckCircle2, Clock, Maximize2, Printer, Construction } from 'lucide-react';
+import { WifiOff, MapPin, Search, Snowflake, Truck, ArrowRightLeft, CheckCircle2, Clock, Maximize2, Printer, Construction } from 'lucide-react';
 import { printRunSheet } from './runSheet';
 import TripMap, { type MapTrip } from '../../components/TripMap';
 import { IconChip, Button, Callout, Pill, Modal, Field, inputCls, Empty, cx } from '../../components/ds';
