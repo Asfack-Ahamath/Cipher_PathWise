@@ -18,7 +18,7 @@ export default function TripMap({ trips, selected, onSelect, fitKey, className }
   useEffect(() => {
     if (!el.current || map.current) return;
     const m = L.map(el.current, { zoomControl: true, attributionControl: true, preferCanvas: false }).setView([7.2, 80.3], 8);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(m);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, referrerPolicy: 'strict-origin-when-cross-origin', attribution: '© OpenStreetMap contributors' }).addTo(m);
     layer.current = L.layerGroup().addTo(m);
     map.current = m;
     const ro = new ResizeObserver(() => m.invalidateSize());
