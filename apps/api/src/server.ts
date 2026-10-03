@@ -40,6 +40,8 @@ export async function buildServer() {
         'upgrade-insecure-requests': config.isProd ? [] : null,
       },
     },
+    // OpenStreetMap's tile servers block requests without a Referer, so send the origin (not the full URL)
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: { policy: 'same-site' },
     hsts: config.isProd ? { maxAge: 15552000, includeSubDomains: true } : false,
