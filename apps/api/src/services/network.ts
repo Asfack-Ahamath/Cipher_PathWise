@@ -51,7 +51,16 @@ export async function activePlanDate(db?: Db): Promise<string> {
 }
 
 /** Calendar facts for a date (monsoon affects travel speed). */
+const calendarCache = new Map<string, { at: number; day: any }>();
 export async function calendarDay(date: string, db?: Db) {
+  // reads outside a transaction are cached briefly: the live views ask for the same day once per trip
+  const hit = !db && calendarCache.get(date);
+  if (hit && Date.now() - hit.at < 15_000) return hit.day;
+  const day = await calendarDayQuery(date, db);
+  if (!db) calendarCache.set(date, { at: Date.now(), day });
+  return day;
+}
+async function calendarDayQuery(date: string, db?: Db) {
   const r = await q<any>(`SELECT is_operating AS "isOperating", is_payday AS "isPayday", holiday, festival, festival_ramp AS "festivalRamp", monsoon, is_holiday AS "isHoliday" FROM calendar WHERE date = $1`, [date], db);
   return r[0] ?? { isOperating: true, isPayday: false, holiday: null, festival: null, festivalRamp: 0, monsoon: false, isHoliday: false };
 }

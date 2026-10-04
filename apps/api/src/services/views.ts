@@ -10,6 +10,16 @@ import { liveEta } from './live.js';
 
 /* Read models for the dispatcher's screens. */
 
+/** map with at most `limit` calls in flight, keeping the input order */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i]); }
+  }));
+  return out;
+}
+
 export async function overview(date?: string, depot?: string) {
   const d = date ?? await activePlanDate();
   const net = await loadNetwork();
@@ -23,18 +33,21 @@ export async function overview(date?: string, depot?: string) {
     one<any>(`SELECT version, published_at AS "publishedAt" FROM plans WHERE plan_date = $1 AND status = 'published'`, [d]),
     one<any>(`SELECT is_payday AS "isPayday", holiday, festival_ramp AS "festivalRamp", monsoon FROM calendar WHERE date = $1`, [d]),
   ]);
-  const draft = await one<any>(`SELECT version FROM plans WHERE plan_date = $1 AND status = 'draft'`, [d]);
   const vehicles = [...net.vehicles.values()].filter(v => !depot || v.depot === depot);
   const tripCount = Object.fromEntries(trips.map(t => [t.status, t.n]));
   const deferred = byStatus.reduce((a, r) => a + r.n - r.partial, 0);
   const partial = byStatus.reduce((a, r) => a + r.partial, 0);
-  const next = await one<any>(`SELECT to_char(date,'YYYY-MM-DD') AS date, holiday FROM calendar WHERE date > $1 ORDER BY date LIMIT 1`, [d]);
-  const view = pub ? await planView(d) : null;
-  const closest = view ? Object.entries(view.usage).filter(([id]) => !depot || net.vehicles.get(id)!.depot === depot).map(([id, u]: any) => ({ id, depot: net.vehicles.get(id)!.depot, fresh: u.fresh, freshBudget: u.freshBudget, fuelAfter: Math.round((u.fuelUsedL + u.fuelAddL) * 10) / 10, fuelQuota: u.fuelQuotaL })).sort((a, b) => b.fresh / b.freshBudget - a.fresh / a.freshBudget).slice(0, 4) : [];
   const reefers = vehicles.filter(v => v.temp === 'reefer');
-  const unconfirmed = await one<{ n: number }>(`SELECT count(*)::int AS n FROM orders o JOIN outlets ot ON ot.id = o.outlet_id WHERE o.delivery_date = $1 AND ($4::text IS NULL OR ot.depot = $4) AND o.status IN ('delivered','partial') AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.order_id = o.id)
+  const unconfirmedQ = one<{ n: number }>(`SELECT count(*)::int AS n FROM orders o JOIN outlets ot ON ot.id = o.outlet_id WHERE o.delivery_date = $1 AND ($4::text IS NULL OR ot.depot = $4) AND o.status IN ('delivered','partial') AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.order_id = o.id)
       AND EXISTS (SELECT 1 FROM trip_orders tor JOIN stop_events e ON e.trip_id = tor.trip_id AND e.outlet_id = o.outlet_id AND e.type = 'delivered' WHERE tor.order_id = o.id AND e.device_time < $2::timestamptz - make_interval(mins => $3))`,
     [d, nowSync(), Math.round(operations.receiptConfirmHours * 60), depot ?? null]);
+  const [draft, next, view, unconfirmed] = await Promise.all([
+    one<any>(`SELECT version FROM plans WHERE plan_date = $1 AND status = 'draft'`, [d]),
+    one<any>(`SELECT to_char(date,'YYYY-MM-DD') AS date, holiday FROM calendar WHERE date > $1 ORDER BY date LIMIT 1`, [d]),
+    pub ? planView(d) : Promise.resolve(null),
+    unconfirmedQ,
+  ]);
+  const closest = view ? Object.entries(view.usage).filter(([id]) => !depot || net.vehicles.get(id)!.depot === depot).map(([id, u]: any) => ({ id, depot: net.vehicles.get(id)!.depot, fresh: u.fresh, freshBudget: u.freshBudget, fuelAfter: Math.round((u.fuelUsedL + u.fuelAddL) * 10) / 10, fuelQuota: u.fuelQuotaL })).sort((a, b) => b.fresh / b.freshBudget - a.fresh / a.freshBudget).slice(0, 4) : [];
   return {
     date: d, dateLabel: dayLabel(d), now: nowSync().toISOString(), calendar: cal, nextDay: next,
     plan: { published: pub, draft: draft ? { version: draft.version } : null },
@@ -70,8 +83,8 @@ export async function tracking(date?: string) {
   const now = nowSync();
   const trips = await q<any>(`SELECT t.id, t.vehicle_id, t.trip_no, t.depart, t.status, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.started_at AS "startedAt", t.closed_at AS "closedAt", p.last_seen AS "lastSeen"
     FROM trips t LEFT JOIN vehicle_presence p ON p.vehicle_id = t.vehicle_id WHERE t.plan_date = $1 AND t.status <> 'cancelled' ORDER BY t.depart, t.vehicle_id`, [d]);
-  const out = [];
-  for (const t of trips) {
+  // a few trips at a time: sequential is slow over a remote database, unbounded would starve the pool
+  const out = await mapLimit(trips, 4, async (t: any) => {
     const eta = await liveEta(net, t, now);
     const ev = await q<any>(`SELECT outlet_id AS "outletId", device_time AS "deviceTime", conflict, payload->>'outcome' AS outcome FROM stop_events WHERE trip_id = $1 AND type = 'delivered' ORDER BY device_time`, [t.id]);
     const lastSeen = t.lastSeen ? new Date(t.lastSeen) : null;
@@ -91,7 +104,7 @@ export async function tracking(date?: string) {
       const f = Math.min(1, Math.max(0, (minutesOfDay(now) - from) / Math.max(10, next.expectedArrive - from)));
       estimate = [pos[0] + ((nx.lat ?? pos[0]) - pos[0]) * f, pos[1] + ((nx.lng ?? pos[1]) - pos[1]) * f];
     }
-    out.push({
+    return {
       id: t.id, vehicleId: t.vehicle_id, trip: t.trip_no, depart: t.depart, status: t.status, startedAt: t.startedAt, closedAt: t.closedAt,
       driverName: v.driverName, vehicle: { type: v.type, temp: v.temp, depot: v.depot },
       brand: ot(eta.stops[0]?.outletId ?? '')?.brand ?? null, district: ot(eta.stops[0]?.outletId ?? '')?.district ?? null,
@@ -103,8 +116,8 @@ export async function tracking(date?: string) {
       next: next ? { outletId: next.outletId, eta: next.expectedArriveHHMM, planned: next.plannedHHMM } : null,
       offline, lastSeen: lastSeen?.toISOString() ?? null, position: pos, estimate, conflicts: ev.filter(e => e.conflict).length,
       lateRisk: eta.lateRisk, hold: eta.hold, depot: DEPOT_POSITION[v.depot],
-    });
-  }
+    };
+  });
   return { date: d, now: now.toISOString(), trips: out, depots: DEPOT_POSITION };
 }
 

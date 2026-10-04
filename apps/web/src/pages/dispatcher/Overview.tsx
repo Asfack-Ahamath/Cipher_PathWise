@@ -55,7 +55,8 @@ export default function Overview() {
   const { user } = useAuth();
   const now = useNow(30_000);
   const depot = useDepot();
-  const q = useApi<any>(['overview', depot], depot === 'all' ? '/overview' : `/overview?depot=${depot}`, { refetchInterval: 15_000, placeholderData: (prev: any) => prev });
+  // 'all' shares the sidebar's ['overview'] query, so it is fetched and polled once
+  const q = useApi<any>(depot === 'all' ? ['overview'] : ['overview', depot], depot === 'all' ? '/overview' : `/overview?depot=${depot}`, { refetchInterval: 15_000, placeholderData: (prev: any) => prev });
   const tr = useApi<any>(['tracking'], '/tracking', { refetchInterval: 20_000 });
   if (q.isLoading) return <Loading />;
   if (q.error) return <ErrorState error={q.error} retry={q.refetch} />;
