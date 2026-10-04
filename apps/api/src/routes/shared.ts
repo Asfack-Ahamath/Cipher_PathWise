@@ -17,8 +17,7 @@ export async function sharedRoutes(app: FastifyInstance) {
     catch { return reply.code(503).send({ ok: false }); }
   });
   app.get('/api/clock', guard.any, async () => {
-    await loadClock();
-    const d = await activePlanDate();
+    const [, d] = await Promise.all([loadClock(), activePlanDate()]);
     return { now: nowSync().toISOString(), planDate: d, planDateLabel: dayLabel(d), demoMode: config.demoMode };
   });
   /** Demo clock: lets judges jump to 05:35 and replay the day. Off when DEMO_MODE=false. */

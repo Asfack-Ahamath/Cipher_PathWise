@@ -7,7 +7,14 @@ pg.types.setTypeParser(1082, v => v);                                // date →
 // Managed Postgres (Supabase, Neon) needs TLS: set DATABASE_SSL=true. We drop any sslmode in the URL so
 // the explicit TLS settings below always apply (Supabase's pooler certificate is not in Node's CA store).
 const url = config.databaseSsl ? config.databaseUrl.replace(/([?&])sslmode=[^&]*&?/, '$1').replace(/[?&]$/, '') : config.databaseUrl;
-export const pool = new pg.Pool({ connectionString: url, max: Number(process.env.DATABASE_POOL_MAX ?? 10), idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl: config.databaseSsl ? { rejectUnauthorized: false } : undefined });
+// Supabase's session pooler caps the whole project at a few connections (15 on the free plan), shared by every
+// running copy of the API, so hand idle ones back after a minute. TCP keep-alive stops proxies dropping busy ones.
+export const pool = new pg.Pool({
+  connectionString: url, max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+  idleTimeoutMillis: Number(process.env.DATABASE_IDLE_MS ?? 60_000), connectionTimeoutMillis: 10_000,
+  keepAlive: true, keepAliveInitialDelayMillis: 10_000,
+  ssl: config.databaseSsl ? { rejectUnauthorized: false } : undefined,
+});
 pool.on('error', err => console.error('database pool error:', err.message));
 export type Db = pg.Pool | pg.PoolClient;
 
@@ -34,4 +41,13 @@ export async function tx<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
   } finally {
     c.release();
   }
+}
+
+/** Independent queries side by side on the pool (one wait for the database instead of several); one after
+ *  another on a transaction client, which can only run one query at a time. */
+export async function parallel<T extends readonly (() => Promise<unknown>)[]>(db: Db | undefined, fns: T): Promise<{ -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
+  if (!db || db === pool) return Promise.all(fns.map(f => f())) as any;
+  const out: unknown[] = [];
+  for (const f of fns) out.push(await f());
+  return out as any;
 }

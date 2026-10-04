@@ -1,5 +1,5 @@
 import { autoPlan, departureFor, REASONS, scheduleTrip, sequenceOrders, toHHMM, validatePlan, type DeferralDecision, type Network, type Order, type PlanTrip, type ReasonCode } from '@pathwise/core';
-import { audit, notify } from '../audit.js';
+import { audit, notifyMany, type Notice } from '../audit.js';
 import { dayLabel, nowSync } from '../clock.js';
 import { one, pool, q, tx, type Db } from '../db.js';
 import { bad, conflict, notFound } from '../errors.js';
@@ -44,20 +44,21 @@ export async function liveTrips(date: string, db?: Db): Promise<(PlanTrip & { id
 
 /** Everything the plan board needs: the current draft (or the live plan), its validation and the unassigned orders. */
 export async function planView(date: string) {
-  const net = await loadNetwork();
-  const [draft, published] = await Promise.all([latest(date, 'draft'), latest(date, 'published')]);
-  const orders = await ordersForDate(date);
-  const deferredHere = await q<any>(`SELECT d.id, d.order_id AS "orderId", d.reason, d.kind, d.why, d.units, to_char(d.to_date,'YYYY-MM-DD') AS "toDate", d.notified_at AS "notifiedAt", d.acknowledged_at AS "acknowledgedAt", d.escalated,
-      o.outlet_id AS "outletId", o.temp, o.units AS "orderUnits", o.kg, o.m3, o.description
-    FROM deferrals d JOIN orders o ON o.id = d.order_id WHERE d.from_date = $1 ORDER BY d.id`, [date]);
-  // orders deferred at publish moved to the next run; keep them visible on this day's board
+  // independent reads run side by side on the pool: one round trip of waiting instead of six
+  const [net, draft, published, orders, deferredHere, live, movedOn] = await Promise.all([
+    loadNetwork(), latest(date, 'draft'), latest(date, 'published'), ordersForDate(date),
+    q<any>(`SELECT d.id, d.order_id AS "orderId", d.reason, d.kind, d.why, d.units, to_char(d.to_date,'YYYY-MM-DD') AS "toDate", d.notified_at AS "notifiedAt", d.acknowledged_at AS "acknowledgedAt", d.escalated,
+        o.outlet_id AS "outletId", o.temp, o.units AS "orderUnits", o.kg, o.m3, o.description
+      FROM deferrals d JOIN orders o ON o.id = d.order_id WHERE d.from_date = $1 ORDER BY d.id`, [date]),
+    liveTrips(date),
+    // orders deferred at publish moved to the next run; keep them visible on this day's board
+    q<any>(`SELECT DISTINCT ON (o.id) o.id, o.outlet_id AS "outletId", o.temp, o.units, o.kg, o.m3, o.description, o.status, o.deferred_yesterday AS "deferredYesterday", o.days_since_served AS "daysSinceServed"
+      FROM deferrals d JOIN orders o ON o.id = d.order_id WHERE d.from_date = $1 AND (o.delivery_date <> $1 OR o.status = 'cancelled') ORDER BY o.id`, [date]),
+  ]);
   const all = new Map<string, any>(orders.map(o => [o.id, o]));
-  for (const d of deferredHere) if (!all.has(d.orderId)) {
-    const o = await one<any>(`SELECT id, outlet_id AS "outletId", temp, units, kg, m3, description, status, deferred_yesterday AS "deferredYesterday", days_since_served AS "daysSinceServed" FROM orders WHERE id = $1`, [d.orderId]);
-    if (o) all.set(o.id, { ...o, date });
-  }
+  const movedById = new Map<string, any>(movedOn.map(o => [o.id, o]));
+  for (const d of deferredHere) if (!all.has(d.orderId) && movedById.has(d.orderId)) all.set(d.orderId, { ...movedById.get(d.orderId), date });
   const orderMap = new Map<string, Order>([...all.values()].map(o => [o.id, o]));
-  const live = await liveTrips(date);
   const mode: 'draft' | 'live' | 'empty' = draft ? 'draft' : published ? 'live' : 'empty';
   const trips: PlanTrip[] = draft ? draft.trips : live;
   const v = validatePlan(net, trips, orderMap);
@@ -160,7 +161,9 @@ export async function discardDraft(date: string, userId: number) {
   await audit(pool, userId, 'plan.discard', `plan:${date}`);
 }
 
-/** Publish the draft: apply it to the live trips, record deferrals, notify stores, loaders and drivers. */
+/** Publish the draft: apply it to the live trips, record deferrals, notify stores, loaders and drivers.
+ *  Every step is a set-based statement, so the number of round trips stays fixed however many trips,
+ *  orders and notices the plan has (one query per row took tens of seconds against a remote database). */
 export async function publish(date: string, userId: number) {
   return tx(async c => {
     const d = await latest(date, 'draft', c);
@@ -177,59 +180,85 @@ export async function publish(date: string, userId: number) {
 
     // apply trips in place
     const live = await q<any>(`SELECT id, vehicle_id, trip_no, status FROM trips WHERE plan_date = $1`, [date], c);
+    const liveIds = new Set<number>(live.map(r => r.id));
+    const rowOf = new Map<string, any>(live.map(r => [`${r.vehicle_id}-${r.trip_no}`, r]));
+    const fresh = d.trips.filter(t => !rowOf.has(`${t.vehicleId}-${t.trip}`));
+    if (fresh.length) {
+      const ins = await q<any>(`INSERT INTO trips (plan_date, version, vehicle_id, trip_no, depart)
+        SELECT $1, $2, v, n, dep FROM unnest($3::text[], $4::int[], $5::text[]) AS x(v, n, dep) RETURNING id, vehicle_id, trip_no, status`,
+        [date, d.version, fresh.map(t => t.vehicleId), fresh.map(t => t.trip), fresh.map(t => t.depart)], c);
+      for (const r of ins) rowOf.set(`${r.vehicle_id}-${r.trip_no}`, r);
+    }
+    const current = await q<{ trip_id: number; order_id: string }>(`SELECT tor.trip_id, tor.order_id FROM trip_orders tor JOIN trips t ON t.id = tor.trip_id
+      WHERE t.plan_date = $1 AND tor.moved_at IS NULL AND tor.load_status <> 'removed'`, [date], c);
+    const curByTrip = new Map<number, string[]>();
+    for (const r of current) { const a = curByTrip.get(r.trip_id); if (a) a.push(r.order_id); else curByTrip.set(r.trip_id, [r.order_id]); }
+
     const keep = new Set<number>();
     const changedTrips: { id: number; vehicleId: string; trip: number; added: string[]; removed: string[]; status: string }[] = [];
+    const rm = { trip: [] as number[], order: [] as string[] };
+    const up = { trip: [] as number[], order: [] as string[], seq: [] as number[] };
+    const tu = { id: [] as number[], depart: [] as string[], reopened: [] as boolean[], changed: [] as boolean[], note: [] as string[] };
     for (const t of d.trips) {
-      let row = live.find(r => r.vehicle_id === t.vehicleId && r.trip_no === t.trip);
-      if (!row) row = await one<any>(`INSERT INTO trips (plan_date, version, vehicle_id, trip_no, depart) VALUES ($1,$2,$3,$4,$5) RETURNING id, vehicle_id, trip_no, status`, [date, d.version, t.vehicleId, t.trip, t.depart], c);
+      const row = rowOf.get(`${t.vehicleId}-${t.trip}`);
       keep.add(row.id);
-      const cur = (await q<{ order_id: string }>(`SELECT order_id FROM trip_orders WHERE trip_id = $1 AND moved_at IS NULL AND load_status <> 'removed'`, [row.id], c)).map(r => r.order_id);
+      const cur = curByTrip.get(row.id) ?? [];
       const added = t.orderIds.filter(id => !cur.includes(id)), removed = cur.filter(id => !t.orderIds.includes(id));
-      for (const id of removed) await c.query(`UPDATE trip_orders SET load_status = 'removed' WHERE trip_id = $1 AND order_id = $2`, [row.id, id]);
-      for (const [i, id] of t.orderIds.entries()) {
-        await c.query(`INSERT INTO trip_orders (trip_id, order_id, seq) VALUES ($1,$2,$3) ON CONFLICT (trip_id, order_id) DO UPDATE SET seq = EXCLUDED.seq, load_status = CASE WHEN trip_orders.load_status = 'removed' THEN 'pending' ELSE trip_orders.load_status END, moved_at = NULL`, [row.id, id, i + 1]);
-      }
-      const reopened = (added.length || removed.length) && ['released'].includes(row.status);
-      await c.query(`UPDATE trips SET depart = $2, version = $3, status = CASE WHEN status = 'cancelled' THEN 'planned' WHEN $4::boolean THEN 'loading' ELSE status END,
-          changed_at = CASE WHEN $5::boolean THEN $6::timestamptz ELSE changed_at END, change_note = CASE WHEN $5::boolean THEN $7 ELSE change_note END WHERE id = $1`,
-        [row.id, t.depart, d.version, reopened, !!(added.length || removed.length) && live.some(r => r.id === row.id), at, JSON.stringify({ added, removed })]);
-      if ((added.length || removed.length) && live.some(r => r.id === row.id)) changedTrips.push({ id: row.id, vehicleId: t.vehicleId, trip: t.trip, added, removed, status: row.status });
+      for (const id of removed) { rm.trip.push(row.id); rm.order.push(id); }
+      const seen = new Set<string>();
+      t.orderIds.forEach((id, i) => { if (seen.has(id)) return; seen.add(id); up.trip.push(row.id); up.order.push(id); up.seq.push(i + 1); });
+      const changed = !!(added.length || removed.length) && liveIds.has(row.id);
+      tu.id.push(row.id); tu.depart.push(t.depart); tu.reopened.push(!!(added.length || removed.length) && row.status === 'released');
+      tu.changed.push(changed); tu.note.push(JSON.stringify({ added, removed }));
+      if (changed) changedTrips.push({ id: row.id, vehicleId: t.vehicleId, trip: t.trip, added, removed, status: row.status });
     }
-    for (const r of live) if (!keep.has(r.id) && r.status !== 'cancelled') {
-      await c.query(`UPDATE trips SET status = 'cancelled', changed_at = $2 WHERE id = $1`, [r.id, at]);
-      changedTrips.push({ id: r.id, vehicleId: r.vehicle_id, trip: r.trip_no, added: [], removed: ['(all)'], status: 'cancelled' });
-    }
+    if (rm.trip.length) await c.query(`UPDATE trip_orders tor SET load_status = 'removed' FROM unnest($1::int[], $2::text[]) AS x(trip_id, order_id) WHERE tor.trip_id = x.trip_id AND tor.order_id = x.order_id`, [rm.trip, rm.order]);
+    if (up.trip.length) await c.query(`INSERT INTO trip_orders (trip_id, order_id, seq) SELECT * FROM unnest($1::int[], $2::text[], $3::int[])
+        ON CONFLICT (trip_id, order_id) DO UPDATE SET seq = EXCLUDED.seq, load_status = CASE WHEN trip_orders.load_status = 'removed' THEN 'pending' ELSE trip_orders.load_status END, moved_at = NULL`, [up.trip, up.order, up.seq]);
+    if (tu.id.length) await c.query(`UPDATE trips t SET depart = x.depart, version = $6, status = CASE WHEN t.status = 'cancelled' THEN 'planned' WHEN x.reopened THEN 'loading' ELSE t.status END,
+        changed_at = CASE WHEN x.changed THEN $7::timestamptz ELSE t.changed_at END, change_note = CASE WHEN x.changed THEN x.note ELSE t.change_note END
+      FROM unnest($1::int[], $2::text[], $3::boolean[], $4::boolean[], $5::text[]) AS x(id, depart, reopened, changed, note) WHERE t.id = x.id`,
+      [tu.id, tu.depart, tu.reopened, tu.changed, tu.note, d.version, at]);
+    const cancel = live.filter(r => !keep.has(r.id) && r.status !== 'cancelled');
+    if (cancel.length) await c.query(`UPDATE trips SET status = 'cancelled', changed_at = $2 WHERE id = ANY($1::int[])`, [cancel.map(r => r.id), at]);
+    for (const r of cancel) changedTrips.push({ id: r.id, vehicleId: r.vehicle_id, trip: r.trip_no, added: [], removed: ['(all)'], status: 'cancelled' });
 
     // order statuses
     const planned = new Set(d.trips.flatMap(t => t.orderIds));
-    for (const o of orderRows) if (planned.has(o.id) && ['confirmed', 'deferred'].includes(o.status)) await c.query(`UPDATE orders SET status = 'planned' WHERE id = $1`, [o.id]);
+    const toPlanned = orderRows.filter(o => planned.has(o.id) && ['confirmed', 'deferred'].includes(o.status)).map(o => o.id);
+    if (toPlanned.length) await c.query(`UPDATE orders SET status = 'planned' WHERE id = ANY($1::text[])`, [toPlanned]);
 
+    const notices: Notice[] = [];
     // deferrals: every unassigned order moves to the next run, with its reason
     const unassigned = orderRows.filter(o => !planned.has(o.id) && ['confirmed', 'planned', 'deferred'].includes(o.status));
-    for (const o of unassigned) {
-      const dec = d.deferrals.find(x => x.orderId === o.id) ?? { orderId: o.id, reason: 'other' as ReasonCode, kind: 'chosen' as const, why: 'Deferred by the dispatcher.' };
-      const escalated = !!o.deferredYesterday;
-      await c.query(`INSERT INTO deferrals (order_id, from_date, to_date, reason, kind, why, plan_id, created_by, created_at, notified_at, escalated) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10)`,
-        [o.id, date, nextRun, dec.reason, dec.kind, dec.why, d.id, userId, at, escalated]);
-      await c.query(`UPDATE orders SET status = 'deferred', delivery_date = $2, deferred_yesterday = true, days_since_served = days_since_served + 1 WHERE id = $1`, [o.id, nextRun]);
-      await notify(c, `outlet:${o.outletId}`, 'deferral', `${o.temp === 'chilled' ? 'Chilled' : 'Ambient'} order ${o.id} moves to ${dayLabel(nextRun)}`,
-        `${REASONS[dec.reason]?.store ?? dec.why}${escalated ? ' This is the second deferral in a row, so it goes first on the next run.' : ' It stays on order — no need to re-order.'}`, { tone: 'amber', link: '/s/deferrals' });
+    if (unassigned.length) {
+      const decs = unassigned.map(o => d.deferrals.find(x => x.orderId === o.id) ?? { orderId: o.id, reason: 'other' as ReasonCode, kind: 'chosen' as const, why: 'Deferred by the dispatcher.' });
+      await c.query(`INSERT INTO deferrals (order_id, from_date, to_date, reason, kind, why, plan_id, created_by, created_at, notified_at, escalated)
+        SELECT oid, $1, $2, r, k, w, $3, $4, $5, $5, e FROM unnest($6::text[], $7::text[], $8::text[], $9::text[], $10::boolean[]) WITH ORDINALITY AS x(oid, r, k, w, e, n) ORDER BY n`,
+        [date, nextRun, d.id, userId, at, unassigned.map(o => o.id), decs.map(x => x.reason), decs.map(x => x.kind), decs.map(x => x.why), unassigned.map(o => !!o.deferredYesterday)]);
+      await c.query(`UPDATE orders SET status = 'deferred', delivery_date = $2, deferred_yesterday = true, days_since_served = days_since_served + 1 WHERE id = ANY($1::text[])`, [unassigned.map(o => o.id), nextRun]);
+      unassigned.forEach((o, i) => {
+        const dec = decs[i], escalated = !!o.deferredYesterday;
+        notices.push({ audience: `outlet:${o.outletId}`, kind: 'deferral', title: `${o.temp === 'chilled' ? 'Chilled' : 'Ambient'} order ${o.id} moves to ${dayLabel(nextRun)}`,
+          body: `${REASONS[dec.reason]?.store ?? dec.why}${escalated ? ' This is the second deferral in a row, so it goes first on the next run.' : ' It stays on order — no need to re-order.'}`, tone: 'amber', link: '/s/deferrals' });
+      });
     }
 
     // notices
     const tripsByDepot = new Map<string, number>();
     for (const t of d.trips) { const dep = net.vehicles.get(t.vehicleId)!.depot; tripsByDepot.set(dep, (tripsByDepot.get(dep) ?? 0) + 1); }
-    for (const [dep, n] of tripsByDepot) await notify(c, `depot:${dep}`, 'plan_published', `Plan v${d.version} published for ${dayLabel(date)}`, `${n} trips from ${dep} DC. Load lists are ready in stop order.`, { tone: 'violet', link: '/l' });
+    for (const [dep, n] of tripsByDepot) notices.push({ audience: `depot:${dep}`, kind: 'plan_published', title: `Plan v${d.version} published for ${dayLabel(date)}`, body: `${n} trips from ${dep} DC. Load lists are ready in stop order.`, tone: 'violet', link: '/l' });
     for (const t of d.trips) {
       const s = scheduleTrip(net, t, orders);
-      await notify(c, `vehicle:${t.vehicleId}`, 'run_ready', `Trip ${t.trip} for ${dayLabel(date)}: ${s.stops.length} stops in ${s.district}`, `Departs ${t.depart}. Saved to your phone for offline use.`, { tone: 'blue', link: '/r' });
-      for (const st of s.stops) await notify(c, `outlet:${st.outletId}`, 'planned', `Planned on ${t.vehicleId} Trip ${t.trip}`, `${dayLabel(date)} · estimated arrival ${toHHMM(st.arrive)} · stop ${st.seq} of ${s.stops.length}.`, { tone: 'blue', link: '/s/track' });
+      notices.push({ audience: `vehicle:${t.vehicleId}`, kind: 'run_ready', title: `Trip ${t.trip} for ${dayLabel(date)}: ${s.stops.length} stops in ${s.district}`, body: `Departs ${t.depart}. Saved to your phone for offline use.`, tone: 'blue', link: '/r' });
+      for (const st of s.stops) notices.push({ audience: `outlet:${st.outletId}`, kind: 'planned', title: `Planned on ${t.vehicleId} Trip ${t.trip}`, body: `${dayLabel(date)} · estimated arrival ${toHHMM(st.arrive)} · stop ${st.seq} of ${s.stops.length}.`, tone: 'blue', link: '/s/track' });
     }
     for (const ch of changedTrips) {
       const dep = net.vehicles.get(ch.vehicleId)!.depot;
-      await notify(c, `depot:${dep}`, 'plan_changed', `${ch.vehicleId} Trip ${ch.trip} changed in plan v${d.version}`, [ch.added.length ? `Added ${ch.added.join(', ')}` : '', ch.removed.length ? `Removed ${ch.removed.join(', ')}` : ''].filter(Boolean).join(' · '), { tone: 'amber', link: `/l/trip/${ch.id}` });
-      await notify(c, `vehicle:${ch.vehicleId}`, 'plan_changed', `Your Trip ${ch.trip} changed`, 'Open your run to see the new stops.', { tone: 'amber', link: '/r' });
+      notices.push({ audience: `depot:${dep}`, kind: 'plan_changed', title: `${ch.vehicleId} Trip ${ch.trip} changed in plan v${d.version}`, body: [ch.added.length ? `Added ${ch.added.join(', ')}` : '', ch.removed.length ? `Removed ${ch.removed.join(', ')}` : ''].filter(Boolean).join(' · '), tone: 'amber', link: `/l/trip/${ch.id}` });
+      notices.push({ audience: `vehicle:${ch.vehicleId}`, kind: 'plan_changed', title: `Your Trip ${ch.trip} changed`, body: 'Open your run to see the new stops.', tone: 'amber', link: '/r' });
     }
+    await notifyMany(c, notices);
     const plannedOrders = orderRows.filter(o => planned.has(o.id));
     const stats = {
       trips: d.trips.length, vehicles: new Set(d.trips.map(t => t.vehicleId)).size, orders: plannedOrders.length, deferred: unassigned.length,
@@ -244,11 +273,16 @@ export async function publish(date: string, userId: number) {
 }
 
 /* Plan a live move without committing: which trip of the target vehicle takes the stop, and is it valid? */
-async function simulateMove(c: Db, net: Network, date: string, fromTripId: number, outletId: string, to: { vehicleId: string; trip?: number }, at: Date) {
-  const orders = new Map((await ordersForDate(date, c)).map(o => [o.id, o]));
+type MoveContext = { orders: Map<string, Order>; ids: string[]; live: Awaited<ReturnType<typeof liveTrips>> };
+async function moveContext(c: Db, date: string, fromTripId: number, outletId: string): Promise<MoveContext> {
+  const orders = new Map<string, Order>((await ordersForDate(date, c)).map(o => [o.id, o]));
   const ids = (await q<any>(`SELECT tor.order_id FROM trip_orders tor JOIN orders o ON o.id = tor.order_id WHERE tor.trip_id = $1 AND o.outlet_id = $2 AND tor.moved_at IS NULL AND tor.load_status <> 'removed'`, [fromTripId, outletId], c)).map(r => r.order_id);
-  if (!ids.length) throw bad(`${outletId} is not on this trip.`);
   const live = await liveTrips(date, c);
+  return { orders, ids, live };
+}
+async function simulateMove(c: Db, net: Network, date: string, fromTripId: number, outletId: string, to: { vehicleId: string; trip?: number }, at: Date, ctx?: MoveContext) {
+  const { orders, ids, live } = ctx ?? await moveContext(c, date, fromTripId, outletId);
+  if (!ids.length) throw bad(`${outletId} is not on this trip.`);
   const ot = net.outlets.get(outletId)!;
   const groupOf = (t: PlanTrip) => { const o = orders.get(t.orderIds[0]); const x = o && net.outlets.get(o.outletId); return x ? `${x.brand}|${x.district}` : ''; };
   const mine = live.filter(t => t.vehicleId === to.vehicleId && t.id !== fromTripId);
@@ -275,17 +309,23 @@ async function simulateMove(c: Db, net: Network, date: string, fromTripId: numbe
  *  "keep it where it is", with the expected arrival that includes traffic and any delay the driver reported,
  *  so a move is only suggested when it actually helps the store. */
 export async function moveOptions(date: string, fromTripId: number, outletId: string) {
-  const net = await loadNetwork();
-  const from = await one<any>(`SELECT id, vehicle_id, trip_no, depart, status, to_char(plan_date,'YYYY-MM-DD') AS plan_date FROM trips WHERE id = $1`, [fromTripId]);
+  const [net, from, orders, ctx] = await Promise.all([
+    loadNetwork(),
+    one<any>(`SELECT id, vehicle_id, trip_no, depart, status, to_char(plan_date,'YYYY-MM-DD') AS plan_date FROM trips WHERE id = $1`, [fromTripId]),
+    q<any>(`SELECT o.temp FROM trip_orders tor JOIN orders o ON o.id = tor.order_id WHERE tor.trip_id = $1 AND o.outlet_id = $2 AND tor.moved_at IS NULL AND tor.load_status <> 'removed'`, [fromTripId, outletId]),
+    // the same orders and trips for every candidate below: read them once, not once per vehicle
+    moveContext(pool, date, fromTripId, outletId),
+  ]);
   const ot = net.outlets.get(outletId);
   if (!from || !ot) throw notFound('Trip or outlet not found.');
-  const orders = await q<any>(`SELECT o.temp FROM trip_orders tor JOIN orders o ON o.id = tor.order_id WHERE tor.trip_id = $1 AND o.outlet_id = $2 AND tor.moved_at IS NULL AND tor.load_status <> 'removed'`, [fromTripId, outletId]);
   if (!orders.length) throw bad(`${outletId} is not on this trip any more.`);
   const needReefer = orders.some(o => o.temp === 'chilled');
   const at = nowSync();
-  const eta = await liveEta(net, from, at);
+  const [eta, presence] = await Promise.all([
+    liveEta(net, from, at),
+    one<any>(`SELECT last_seen FROM vehicle_presence WHERE vehicle_id = $1`, [from.vehicle_id]),
+  ]);
   const cur = eta.stops.find(x => x.outletId === outletId);
-  const presence = await one<any>(`SELECT last_seen FROM vehicle_presence WHERE vehicle_id = $1`, [from.vehicle_id]);
   const quietMin = presence ? Math.round((at.getTime() - new Date(presence.last_seen).getTime()) / MS_PER_MINUTE) : null;
   const keep = {
     vehicleId: from.vehicle_id, trip: from.trip_no, keep: true, eta: cur?.expectedArriveHHMM ?? null, planned: cur?.plannedHHMM ?? null, closeAt: cur?.closeHHMM ?? ot.close,
@@ -301,7 +341,7 @@ export async function moveOptions(date: string, fromTripId: number, outletId: st
   for (const v of net.vehicles.values()) {
     if (v.id === from.vehicle_id || v.depot !== ot.depot || v.status !== 'available' || (needReefer && v.temp !== 'reefer') || (ot.vanOnly && v.type !== 'van')) continue;
     try {
-      const r = await simulateMove(pool, net, date, fromTripId, outletId, { vehicleId: v.id }, at);
+      const r = await simulateMove(pool, net, date, fromTripId, outletId, { vehicleId: v.id }, at, ctx);
       out.push({ vehicleId: v.id, type: v.type, temp: v.temp, driverName: v.driverName, trip: r.tp.trip, newTrip: !!r.newTrip, depart: r.tp.depart, eta: r.eta, ok: r.errors.length === 0 && (!r.target || !['in_progress', 'completed'].includes(r.target.status)), problem: r.errors[0]?.title ?? (r.target && ['in_progress', 'completed'].includes(r.target.status) ? 'Already on the road' : null) });
     } catch { /* vehicle cannot be simulated (no free trip) */ }
   }
@@ -331,17 +371,20 @@ export async function moveStopLive(date: string, userId: number, fromTripId: num
     }
     const ids = sim.ids;
     await c.query(`UPDATE trip_orders SET moved_at = $3 WHERE trip_id = $1 AND order_id = ANY($2)`, [fromTripId, ids, at]);
-    for (const [i, id] of sim.tp.orderIds.entries()) await c.query(`INSERT INTO trip_orders (trip_id, order_id, seq) VALUES ($1,$2,$3) ON CONFLICT (trip_id, order_id) DO UPDATE SET seq = EXCLUDED.seq, moved_at = NULL, load_status = CASE WHEN trip_orders.load_status = 'removed' THEN 'pending' ELSE trip_orders.load_status END`, [targetId, id, i + 1]);
-    for (const id of ids) await c.query(`INSERT INTO stop_moves (order_id, outlet_id, from_trip_id, to_trip_id, moved_at, moved_by, reason) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, outletId, fromTripId, targetId, at, userId, reason]);
+    await c.query(`INSERT INTO trip_orders (trip_id, order_id, seq) SELECT $1, oid, n FROM unnest($2::text[]) WITH ORDINALITY AS x(oid, n)
+      ON CONFLICT (trip_id, order_id) DO UPDATE SET seq = EXCLUDED.seq, moved_at = NULL, load_status = CASE WHEN trip_orders.load_status = 'removed' THEN 'pending' ELSE trip_orders.load_status END`, [targetId, [...new Set(sim.tp.orderIds)]]);
+    await c.query(`INSERT INTO stop_moves (order_id, outlet_id, from_trip_id, to_trip_id, moved_at, moved_by, reason) SELECT oid, $2, $3, $4, $5, $6, $7 FROM unnest($1::text[]) WITH ORDINALITY AS x(oid, n) ORDER BY n`, [ids, outletId, fromTripId, targetId, at, userId, reason]);
     await c.query(`UPDATE trips SET changed_at = $2, change_note = $3 WHERE id = ANY($1)`, [[fromTripId, targetId], at, JSON.stringify({ moved: outletId, from: from.vehicle_id, to: to.vehicleId })]);
     const hhmm = toHHMM((at.getTime() - new Date(date + 'T00:00:00+05:30').getTime()) / MS_PER_MINUTE);
-    await notify(c, `vehicle:${from.vehicle_id}`, 'stop_moved', `${outletId} moved to ${to.vehicleId}`, `The dispatcher moved this stop at ${hhmm}. ${reason}`, { tone: 'amber', link: '/r' });
-    await notify(c, `vehicle:${to.vehicleId}`, 'stop_added', `${outletId} added to your Trip ${sim.tp.trip}`, `${reason} Estimated arrival ${sim.eta}.`, { tone: 'amber', link: '/r' });
-    await notify(c, `outlet:${outletId}`, 'eta', `Your delivery now comes on ${to.vehicleId}`, `Estimated arrival ${sim.eta}, inside your window.`, { tone: 'blue', link: '/s/track' });
     // the goods for the moved stop leave from the depot on the new vehicle: tell the loaders
     if (sim.target && sim.target.status === 'released') await c.query(`UPDATE trips SET status = 'loading' WHERE id = $1`, [targetId]);
     const depot = net.vehicles.get(to.vehicleId)!.depot;
-    await notify(c, `depot:${depot}`, 'plan_changed', `Load ${outletId} on ${to.vehicleId} Trip ${sim.tp.trip}`, `Moved from ${from.vehicle_id}: ${reason} Pick ${ids.join(', ')} from depot stock. Departs ${sim.tp.depart}.`, { tone: 'amber', link: `/l/trip/${targetId}` });
+    await notifyMany(c, [
+      { audience: `vehicle:${from.vehicle_id}`, kind: 'stop_moved', title: `${outletId} moved to ${to.vehicleId}`, body: `The dispatcher moved this stop at ${hhmm}. ${reason}`, tone: 'amber', link: '/r' },
+      { audience: `vehicle:${to.vehicleId}`, kind: 'stop_added', title: `${outletId} added to your Trip ${sim.tp.trip}`, body: `${reason} Estimated arrival ${sim.eta}.`, tone: 'amber', link: '/r' },
+      { audience: `outlet:${outletId}`, kind: 'eta', title: `Your delivery now comes on ${to.vehicleId}`, body: `Estimated arrival ${sim.eta}, inside your window.`, tone: 'blue', link: '/s/track' },
+      { audience: `depot:${depot}`, kind: 'plan_changed', title: `Load ${outletId} on ${to.vehicleId} Trip ${sim.tp.trip}`, body: `Moved from ${from.vehicle_id}: ${reason} Pick ${ids.join(', ')} from depot stock. Departs ${sim.tp.depart}.`, tone: 'amber', link: `/l/trip/${targetId}` },
+    ]);
     await audit(c, userId, 'trip.move_stop', `trip:${fromTripId}`, { outletId, to: targetId, reason });
     return { toTripId: targetId, eta: sim.eta };
   });

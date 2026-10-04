@@ -7,7 +7,7 @@ import { setClock } from '../clock.js';
 import { BCRYPT_COST } from '../lib/constants.js';
 import { sbEnsureUser } from '../lib/supabase.js';
 import { invalidateSettings } from '../lib/settings.js';
-import { invalidateConditions } from '../services/network.js';
+import { invalidateConditions, invalidateNetwork } from '../services/network.js';
 import { loadDatasets, readCsv } from './datasets.js';
 
 /* Assumed for the demo (the datasets do not include them): which vehicles are in the
@@ -161,6 +161,7 @@ export async function resetDay(log: (m: string) => void = step) {
     for (const [id, note] of Object.entries(WORKSHOP)) await c.query(`UPDATE vehicles SET status_note = $2 WHERE id = $1`, [id, note]);
     await seedDay(c);
   });
+  invalidateNetwork();
   log('demo day reset: 143 confirmed orders for Thu 30 Apr 2026');
 }
 

@@ -1,11 +1,24 @@
 import { buildNetwork, type Network, type Order } from '@pathwise/core';
 import { q, type Db } from '../db.js';
-import { getSettings } from '../lib/settings.js';
+import { bus, type LiveEvent } from '../lib/events.js';
+import { getSettings, settingsVersion } from '../lib/settings.js';
 
 const seq = async (fns: (() => Promise<any[]>)[]) => { const out: any[][] = []; for (const f of fns) out.push(await f()); return out; };
 
+/* The network (outlets, vehicles, travel, allowances, rules) is read on almost every request but changes only
+   when an admin edits it, a vehicle is swapped out, or the demo day is reset. Each query is a round trip to
+   the database, so keep the built network in memory; writes call invalidateNetwork() and a short TTL backs it up. */
+const NETWORK_TTL = 60_000;
+let netCache: { net: Network; at: number; settings: number } | null = null;
+let netGen = 0;
+export const invalidateNetwork = () => { netCache = null; netGen++; };
+// writes that touch vehicles, outlets or settings are audited; refresh once the transaction has committed
+bus.on('live', (e: LiveEvent) => { if (e.topics.some(t => t === 'admin' || t === 'reference' || t === 'exceptions' || t === 'clock')) invalidateNetwork(); });
+
 /* Loads the planning network (outlets, vehicles, travel, allowances) from the database. */
 export async function loadNetwork(db?: Db): Promise<Network> {
+  if (netCache && Date.now() - netCache.at < NETWORK_TTL && netCache.settings === settingsVersion()) return netCache.net;
+  const gen = netGen;
   // sequential on purpose: inside a transaction all queries share one client
   const [outlets, vehicles, travel, allowance] = await seq([
     () => q<any>(`SELECT id, name, brand, district, depot, dock, parking, open_time AS open, close_time AS close, mall_window AS "mallWindow", van_only AS "vanOnly", lat, lng, is_active AS "isActive" FROM outlets`, [], db),
@@ -15,18 +28,24 @@ export async function loadNetwork(db?: Db): Promise<Network> {
   ]);
   const al: any = { Fresh: {}, Style: {}, Tech: {} };
   for (const a of allowance) al[a.brand][a.dock] = a.minutes;
+  const sv = settingsVersion();
   const { rules } = await getSettings(db);
   const { traffic, roads } = await conditions(db);
-  return buildNetwork({ outlets: outlets.filter((o: any) => o.isActive !== false), vehicles, travel, allowance: al, rules, traffic, roads });
+  const net = buildNetwork({ outlets: outlets.filter((o: any) => o.isActive !== false), vehicles, travel, allowance: al, rules, traffic, roads });
+  // only cache what was read outside a transaction (it may see uncommitted rows) and not invalidated meanwhile
+  if (!db && gen === netGen) netCache = { net, at: Date.now(), settings: sv };
+  return net;
 }
 
 /* traffic_speed and road_conditions change only on re-seed; cache them for ten minutes. */
 let condCache: { traffic: Map<string, number>; roads: Map<string, number>; at: number } | null = null;
-export const invalidateConditions = () => { condCache = null; };
+export const invalidateConditions = () => { condCache = null; invalidateNetwork(); };
 async function conditions(db?: Db) {
   if (condCache && Date.now() - condCache.at < 600_000) return condCache;
-  const t = await q<any>(`SELECT district, hour, monsoon, speed_index FROM traffic_speed`, [], db);
-  const r = await q<any>(`SELECT district, to_char(date,'YYYY-MM-DD') AS date, disruption_index FROM road_conditions WHERE disruption_index < 100`, [], db);
+  const [t, r] = await seq([
+    () => q<any>(`SELECT district, hour, monsoon, speed_index FROM traffic_speed`, [], db),
+    () => q<any>(`SELECT district, to_char(date,'YYYY-MM-DD') AS date, disruption_index FROM road_conditions WHERE disruption_index < 100`, [], db),
+  ]);
   condCache = { traffic: new Map(t.map(x => [`${x.district}|${x.hour}|${x.monsoon ? 1 : 0}`, Number(x.speed_index)])), roads: new Map(r.map(x => [`${x.district}|${x.date}`, Number(x.disruption_index)])), at: Date.now() };
   return condCache;
 }

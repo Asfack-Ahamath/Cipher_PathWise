@@ -79,8 +79,10 @@ Errors: `{ "error": "sentence for a person", "code": "machine_code", "details": 
 | GET / POST | `/admin/users` | list (`q`, `role`, `active`) · create (temporary password returned once) |
 | PATCH | `/admin/users/:id` | name, role, scope, phone, active |
 | POST | `/admin/users/:id/reset-password` · `/reset-pin` · `/unlock` · `/sign-out` | account actions |
-| GET / PATCH | `/admin/vehicles` · `/admin/vehicles/:id` | fleet |
-| GET / PATCH | `/admin/outlets` · `/admin/outlets/:id` | outlets, windows, access, active |
+| GET / POST / PATCH | `/admin/vehicles` · `/admin/vehicles/:id` | fleet; POST adds a vehicle (id optional, next free `VEH###` otherwise) |
+| GET / POST / PATCH | `/admin/outlets` · `/admin/outlets/:id` | outlets, windows, access, active; POST adds an outlet (needs `travel` when its depot has no travel times to the district) |
+| GET | `/admin/travel` | travel times from each depot to each district |
+| GET | `/admin/next-ids` | next free vehicle and outlet ids |
 | GET / PUT | `/admin/settings` · `/admin/settings/:key` | `rules` or `operations` |
 | GET | `/admin/data` · POST / DELETE `/admin/data/forecast` | data status · import / remove the Task 2A forecast `{csv}` |
 | GET | `/admin/audit?action=&entity=&before=&limit=` · `/admin/system` | audit log (paged) · health |

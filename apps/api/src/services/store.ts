@@ -127,9 +127,7 @@ export async function cancelOrder(user: AuthUser, orderId: string, reason: strin
 
 /** The store's home: today's deliveries with honest ETAs, deferrals, what to confirm. */
 export async function storeOverview(outletId: string) {
-  const date = await activePlanDate();
-  const net = await loadNetwork();
-  const { operations } = await getSettings();
+  const [date, net, { operations }] = await Promise.all([activePlanDate(), loadNetwork(), getSettings()]);
   const ot = net.outlets.get(outletId);
   if (!ot) throw notFound('Outlet not found.');
   const now = nowSync();
@@ -137,25 +135,28 @@ export async function storeOverview(outletId: string) {
   // a Fresh outlet's ambient and chilled orders can travel on different vehicles
   const trips = await q<any>(`SELECT DISTINCT t.id, t.vehicle_id, t.trip_no, t.depart, t.status, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date FROM trips t JOIN trip_orders tor ON tor.trip_id = t.id JOIN orders o ON o.id = tor.order_id
     WHERE t.plan_date = $1 AND o.outlet_id = $2 AND tor.moved_at IS NULL AND tor.load_status <> 'removed' AND t.status <> 'cancelled' ORDER BY t.depart`, [date, outletId]);
-  const deliveries: any[] = [];
-  for (const trip of trips) {
-    const eta = await liveEta(net, trip, now);
+  // each trip's reads are independent: run them side by side
+  const perTrip = await Promise.all(trips.map(async (trip: any) => {
+    const [eta, presence, delivered, lines] = await Promise.all([
+      liveEta(net, trip, now),
+      one<any>(`SELECT last_seen FROM vehicle_presence WHERE vehicle_id = $1`, [trip.vehicle_id]),
+      one<any>(`SELECT e.device_time, e.received_at, e.payload, p.receiver, p.delivered_units FROM stop_events e LEFT JOIN pods p ON p.event_id = e.id WHERE e.trip_id = $1 AND e.outlet_id = $2 AND e.type = 'delivered' ORDER BY e.device_time DESC LIMIT 1`, [trip.id, outletId]),
+      q<any>(`SELECT o.id, o.temp FROM trip_orders tor JOIN orders o ON o.id = tor.order_id WHERE tor.trip_id = $1 AND o.outlet_id = $2 AND tor.moved_at IS NULL AND tor.load_status <> 'removed'`, [trip.id, outletId]),
+    ]);
     const stop = eta.stops.find(s => s.outletId === outletId);
-    if (!stop) continue;
-    const presence = await one<any>(`SELECT last_seen FROM vehicle_presence WHERE vehicle_id = $1`, [trip.vehicle_id]);
-    const delivered = await one<any>(`SELECT e.device_time, e.received_at, e.payload, p.receiver, p.delivered_units FROM stop_events e LEFT JOIN pods p ON p.event_id = e.id WHERE e.trip_id = $1 AND e.outlet_id = $2 AND e.type = 'delivered' ORDER BY e.device_time DESC LIMIT 1`, [trip.id, outletId]);
+    if (!stop) return null;
     const lastSeen = presence?.last_seen ? new Date(presence.last_seen) : null;
     const offline = trip.status === 'in_progress' && (!lastSeen || now.getTime() - lastSeen.getTime() > operations.offlineAfterMin * MS_PER_MINUTE);
-    const lines = await q<any>(`SELECT o.id, o.temp FROM trip_orders tor JOIN orders o ON o.id = tor.order_id WHERE tor.trip_id = $1 AND o.outlet_id = $2 AND tor.moved_at IS NULL AND tor.load_status <> 'removed'`, [trip.id, outletId]);
-    deliveries.push({
+    return {
       tripId: trip.id, vehicleId: trip.vehicle_id, trip: trip.trip_no, tripStatus: trip.status, stop: stop.seq, stops: eta.stops.length, orderIds: lines.map(l => l.id), temps: [...new Set(lines.map(l => l.temp))],
       plannedEta: stop.plannedHHMM, eta: stop.expectedArriveHHMM, delayMin: stop.delayMin, window: `${ot.open}–${ot.close}`, mallWindow: ot.mallWindow,
       late: stop.late, lateRisk: stop.lateRisk, hold: eta.hold,
       estimate: offline, lastUpdate: lastSeen?.toISOString() ?? null, handlingMin: net.allowance[ot.brand][ot.dock],
       delivered: delivered ? { at: toHHMM(minutesOfDay(new Date(delivered.device_time))), outcome: delivered.payload?.outcome, receiver: delivered.receiver ?? null, syncedAt: delivered.received_at, driverUnits: delivered.delivered_units ?? {} } : null,
       driverName: net.vehicles.get(trip.vehicle_id)?.driverName ?? null,
-    });
-  }
+    };
+  }));
+  const deliveries = perTrip.filter(Boolean) as any[];
   const deferrals = await q<any>(`SELECT d.id, d.order_id AS "orderId", d.reason, d.kind, d.why, d.units, to_char(d.from_date,'YYYY-MM-DD') AS "fromDate", to_char(d.to_date,'YYYY-MM-DD') AS "toDate", d.created_at AS "createdAt", d.acknowledged_at AS "acknowledgedAt", d.escalated,
       o.temp, o.units AS "orderUnits", o.description FROM deferrals d JOIN orders o ON o.id = d.order_id WHERE o.outlet_id = $1 AND d.to_date >= $2::date - 7 ORDER BY d.created_at DESC`, [outletId, date]);
   const driverUnitsFor = (orderId: string) => { for (const d of deliveries) if (d.delivered?.driverUnits && orderId in d.delivered.driverUnits) return d.delivered.driverUnits[orderId]; return null; };

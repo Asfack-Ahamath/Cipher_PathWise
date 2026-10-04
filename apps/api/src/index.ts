@@ -26,6 +26,14 @@ if (config.storageProvider === 'supabase') {
 }
 if (config.seedOnStart) await seedIfEmpty();
 await loadClock();
+// open a few database connections now: each new one to a remote database costs several round trips,
+// and the first screen fires many requests at once
+{
+  const { pool } = await import('./db.js');
+  const warm = Math.min(4, Number(process.env.DATABASE_POOL_MAX ?? 10));
+  const clients = await Promise.all(Array.from({ length: warm }, () => pool.connect().catch(() => null)));
+  clients.forEach(c => c?.release());
+}
 const app = await buildServer();
 await app.listen({ port: config.port, host: config.host });
 const { local, network } = addresses(config.port, config.host);

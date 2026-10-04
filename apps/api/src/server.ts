@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { promisify } from 'node:util';
+import zlib from 'node:zlib';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -9,6 +11,8 @@ import { config } from './config.js';
 import { HttpError } from './errors.js';
 import { devLogStream } from './lib/console.js';
 import { routes } from './routes/index.js';
+
+const gzip = promisify(zlib.gzip);
 
 export async function buildServer() {
   const app = Fastify({
@@ -71,6 +75,15 @@ export async function buildServer() {
       return `ip:${req.ip}`;
     },
     errorResponseBuilder: (_req, ctx) => ({ statusCode: 429, error: `Too many requests. Try again in ${Math.ceil(ctx.ttl / 1000)} seconds.`, code: 'rate_limited' }),
+  });
+
+  // gzip API responses: the plan board and tracking payloads are large JSON, and the host does not compress them
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (typeof payload !== 'string' || payload.length < 1024 || reply.getHeader('content-encoding')) return payload;
+    if (!/gzip/.test(String(req.headers['accept-encoding'] ?? ''))) return payload;
+    if (!/json|text\/(csv|plain)/.test(String(reply.getHeader('content-type') ?? ''))) return payload;
+    reply.header('content-encoding', 'gzip').header('vary', 'accept-encoding').removeHeader('content-length');
+    return gzip(payload, { level: 5 });
   });
 
   app.setErrorHandler((err: any, req, reply) => {

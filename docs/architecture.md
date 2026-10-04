@@ -1,8 +1,5 @@
 # PathWise architecture
 
-> **Version 1.0 · 4 October 2026 · Team Cipher · Tech-Triathlon 2026 Hackathon**
-> How PathWise, the delivery planning system for Waypoint Group, is built: from the 16:00 order cutoff to the store's receipt. Written for judges and engineers; every figure is drawn from the code in this repository.
-
 | | |
 |---|---|
 | **Status** | Final for the Hackathon submission; matches the code at the time of writing |
