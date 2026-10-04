@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { WifiOff, MapPin, Search, Snowflake, Truck, ArrowRightLeft, CheckCircle2, Clock, Maximize2, Printer, Construction } from 'lucide-react';
+import { ArrowLeft, List, Map as MapIcon, WifiOff, MapPin, Search, Snowflake, Truck, ArrowRightLeft, CheckCircle2, Clock, Maximize2, Printer, Construction } from 'lucide-react';
 import { printRunSheet } from './runSheet';
 import TripMap, { type MapTrip } from '../../components/TripMap';
-import { IconChip, Button, Callout, Pill, Modal, Field, inputCls, Empty, cx } from '../../components/ds';
+import { IconChip, Button, Callout, Pill, Modal, Field, inputCls, Empty, Segmented, cx } from '../../components/ds';
 import { ErrorState, Loading, Status, useAct, useApi, useReference } from '../../components/common';
 import { post } from '../../lib/api';
 import { hhmm, minsAgo, useNow } from '../../lib/clock';
@@ -25,6 +25,9 @@ export default function Tracking() {
   const [search, setSearch] = useState('');
   const [fit, setFit] = useState(0);
   const [moving, setMoving] = useState<{ tripId: number; outletId: string } | null>(null);
+  // below lg the list, map and trip detail take turns on screen; from lg up they sit side by side
+  const [view, setView] = useState<'list' | 'map' | 'detail'>('list');
+  const pick = (id: number | null) => { setSelId(id); setView(id ? 'detail' : 'list'); };
   const detail = useApi<any>(['trip', selId], selId ? `/trips/${selId}` : null, { refetchInterval: 10_000 });
 
   const list: any[] = (q.data?.trips ?? []).filter((t: any) => depot === 'all' || t.vehicle.depot === depot);
@@ -47,16 +50,19 @@ export default function Tracking() {
   const sel = list.find(t => t.id === selId) ?? null;
   const d = detail.data && detail.data.id === selId ? detail.data : null;
   const online = list.filter(t => !t.offline).length;
+  const v = view === 'detail' && !sel ? 'list' : view;
+  const switcher = <Segmented size="sm" value={v === 'map' ? 'map' : 'list'} onChange={x => setView(x)} options={[{ id: 'list', label: <span className="inline-flex items-center gap-1.5"><List size={13} />List</span> }, { id: 'map', label: <span className="inline-flex items-center gap-1.5"><MapIcon size={13} />Map</span> }]} />;
 
   return (
     <div className="under-nav flex flex-1 min-h-0 flex-col lg:flex-row">
-      <div className="lg:w-[300px] 2xl:w-[340px] max-h-[40vh] lg:max-h-none flex-shrink-0 flex flex-col min-h-0 bg-white border-b lg:border-b-0 lg:border-r border-[#E4E7EC]">
+      <div className={cx('lg:w-[300px] 2xl:w-[340px] lg:flex-shrink-0 flex-col min-h-0 bg-white lg:border-r border-[#E4E7EC] lg:flex', v === 'list' ? 'flex flex-1 lg:flex-none' : 'hidden')}>
         <div className="flex-shrink-0 px-5 pt-[calc(4rem+1rem)] pb-3 border-b border-[#E4E7EC]">
           <div className="flex items-center gap-3"><IconChip hue="sky" size={40}><MapPin size={18} /></IconChip>
             <div><h1 className="text-[20px] font-semibold text-slate-900 leading-7">Live tracking</h1>
               <p className="text-[13px] text-slate-500">{online} of {list.length} trips in contact · {hhmm(now)}</p></div></div>
           <label className="mt-3 relative block"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Vehicle, driver or district" className={`${inputCls} pl-9`} /></label>
+          <div className="mt-3 lg:hidden">{switcher}</div>
         </div>
         <div className="flex-1 overflow-y-auto pb-3">
           {groups.map(({ g, items }) => (
@@ -66,7 +72,7 @@ export default function Tracking() {
                 const active = selId === t.id;
                 const right = t.offline ? `Last seen ${t.lastSeen ? hhmm(t.lastSeen) : '—'}` : t.conflicts ? `${t.conflicts} conflict` : t.status === 'in_progress' ? `${t.done} of ${t.total} stops` : t.status === 'completed' ? `Closed ${hhmm(t.closedAt)}` : `Departs ${t.depart}`;
                 return (
-                  <button key={t.id} onClick={() => setSelId(active ? null : t.id)} data-testid={`track-${t.vehicleId}`} className={cx('w-[calc(100%-16px)] text-left mx-2 my-1 px-3 py-3 rounded-xl flex items-start gap-3 transition-colors', active ? 'bg-teal-50 ring-1 ring-teal-200' : 'hover:bg-slate-50')}>
+                  <button key={t.id} onClick={() => pick(active ? null : t.id)} data-testid={`track-${t.vehicleId}`} className={cx('w-[calc(100%-16px)] text-left mx-2 my-1 px-3 py-3 rounded-xl flex items-start gap-3 transition-colors', active ? 'bg-teal-50 ring-1 ring-teal-200' : 'hover:bg-slate-50')}>
                     <span className={cx('mt-1.5 w-2 h-2 rounded-full flex-shrink-0', t.offline ? 'bg-slate-400' : TONE_DOT[groupOf(t)])} />
                     <span className="flex-1 min-w-0">
                       <span className="flex items-baseline justify-between gap-2">
@@ -83,10 +89,11 @@ export default function Tracking() {
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 min-h-[320px] relative">
-        <TripMap trips={mapTrips} selected={selId ? String(selId) : null} onSelect={k => setSelId(Number(k))} fitKey={fit} />
-        <div className="absolute top-3 right-3 z-[500] flex gap-2">
-          {selId && <Button size="sm" onClick={() => setSelId(null)}>All trips</Button>}
+      <div className={cx('flex-1 min-w-0 min-h-[320px] relative lg:block', v === 'map' ? 'block' : 'hidden')}>
+        <TripMap trips={mapTrips} selected={selId ? String(selId) : null} onSelect={k => pick(Number(k))} fitKey={fit} />
+        <div className="absolute top-[4.75rem] left-3 z-[500] lg:hidden">{switcher}</div>
+        <div className="absolute top-[4.75rem] right-3 z-[500] flex gap-2">
+          {selId && <Button size="sm" onClick={() => pick(null)}>All trips</Button>}
           <Button size="sm" icon={<Maximize2 size={13} />} onClick={() => setFit(f => f + 1)}>Fit</Button>
         </div>
         <div className="absolute bottom-3 left-3 z-[500] bg-white/95 rounded-lg ring-1 ring-[#E4E7EC] px-3 py-2 text-[11px] text-slate-600 flex flex-wrap gap-x-3 gap-y-1 max-w-[calc(100%-24px)]">
@@ -95,8 +102,12 @@ export default function Tracking() {
       </div>
 
       {sel && (
-        <aside className="lg:w-[380px] flex-shrink-0 flex flex-col min-h-0 bg-white border-t lg:border-t-0 lg:border-l border-[#E4E7EC] max-h-[60vh] lg:max-h-none">
+        <aside className={cx('lg:w-[380px] lg:flex-shrink-0 flex-col min-h-0 bg-white lg:border-l border-[#E4E7EC] lg:flex', v === 'detail' ? 'flex flex-1 lg:flex-none' : 'hidden')}>
           <div className="flex-shrink-0 px-5 pb-4 pt-[calc(4rem+1rem)] border-b border-[#E4E7EC]">
+            <div className="lg:hidden mb-3 flex items-center justify-between gap-2">
+              <button onClick={() => pick(null)} className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-600 hover:text-slate-900"><ArrowLeft size={15} />All trips</button>
+              <Button size="sm" icon={<MapIcon size={13} />} onClick={() => setView('map')}>Show on map</Button>
+            </div>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5"><IconChip hue={sel.vehicle.temp === 'reefer' ? 'sky' : 'slate'} size={36}>{sel.vehicle.temp === 'reefer' ? <Snowflake size={16} /> : <Truck size={16} />}</IconChip>
                 <div><div className="text-[16px] font-semibold text-slate-900">{sel.vehicleId} · Trip {sel.trip}</div><div className="text-[12px] text-slate-500">{sel.driverName} · {sel.brand} {sel.district}</div></div></div>

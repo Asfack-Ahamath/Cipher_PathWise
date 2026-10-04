@@ -13,6 +13,7 @@ import { assertTripAccess, DateParam, guard, IdParam, parse, params } from './ut
 
 const csvCell = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 const toCsv = (rows: Record<string, unknown>[], cols: string[]) => [cols.join(','), ...rows.map(r => cols.map(c => csvCell(r[c])).join(','))].join('\n') + '\n';
+const DepotQuery = z.object({ depot: z.enum(['Peliyagoda', 'Kandy']).optional() });
 const DateQuery = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() });
 
 async function ordersFor(date: string) {
@@ -25,7 +26,7 @@ async function ordersFor(date: string) {
 
 export async function dispatcherRoutes(app: FastifyInstance) {
   const D = guard.office;
-  app.get('/api/overview', D, async () => overview());
+  app.get('/api/overview', D, async req => overview(undefined, parse(DepotQuery, req.query).depot));
   app.get('/api/tracking', D, async () => tracking());
   app.get('/api/forecast', D, async () => forecast());
   app.get('/api/peak-day', D, async () => peakDay());

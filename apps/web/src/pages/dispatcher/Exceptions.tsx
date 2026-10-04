@@ -2,6 +2,7 @@ import { useMemo, useState, type ElementType } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, WifiOff, Package, CheckCircle2, RefreshCw, Wrench, ArrowRight, Store, MapPinOff, Scale } from 'lucide-react';
 import { Spinner, IconChip, Button, Callout, KeyValues, Overline, Pill, PILL_TONE, Count, Field, inputCls, Empty, cx } from '../../components/ds';
+import { Select } from '../../components/Select';
 import { AuthImage, ErrorState, Loading, useAct, useApi, useReference } from '../../components/common';
 import { post } from '../../lib/api';
 import { hhmm, useNow } from '../../lib/clock';
@@ -98,7 +99,7 @@ export default function Exceptions() {
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 overflow-y-auto bg-[#F4F6FA] pt-16">
+      <div className="flex-1 min-w-0 overflow-y-auto bg-[#F4F6FA] pt-4 md:pt-16">
         {!sel ? <Empty icon={<CheckCircle2 size={28} />} title="No exceptions yet">Shortfalls from the dock, faults, failed deliveries, sync conflicts and receipt problems land here for a decision.</Empty> : (
           <div className="mx-auto max-w-[1000px] px-4 sm:px-6 py-6">
             <div className="flex flex-wrap items-center gap-2">
@@ -128,7 +129,8 @@ export default function Exceptions() {
                     ))}
                   </div>
                   {options(sel).find(o => o.decision === pick)?.needsVehicle && (
-                    <Field label="Replacement vehicle"><select className={`${inputCls} mt-1`} value={vehicleId} onChange={e => setVehicleId(e.target.value)}><option value="">Choose…</option>{swapCandidates.map((v: any) => <option key={v.id} value={v.id}>{v.id} · {v.temp} {v.type} · {v.depot} · {v.volumeCap} m³</option>)}</select></Field>
+                    <Field label="Replacement vehicle"><div className="mt-1"><Select value={vehicleId} onChange={setVehicleId} aria-label="Replacement vehicle" placeholder="Choose…"
+                      options={swapCandidates.map((v: any) => ({ value: v.id as string, label: `${v.id} · ${v.temp} ${v.type}`, hint: `${v.depot} · ${v.volumeCap} m³` }))} /></div></Field>
                   )}
                   <div className="mt-4"><Field label={options(sel).find(o => o.decision === pick)?.needsNote ? "Why (required)" : "Note (optional)"}><input className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="Saved to the audit log" /></Field></div>
                   <div className="mt-4 flex justify-end">
