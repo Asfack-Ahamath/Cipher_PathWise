@@ -453,25 +453,27 @@ export async function auditLog(f: z.infer<typeof AuditQuery>) {
   if (f.to) add(`a.at <= ?`, f.to);
   if (f.before) add(`a.id < ?`, f.before);
   p.push(f.limit + 1);
-  const rows = await q<any>(`SELECT a.id, a.at, a.action, a.entity, a.data, a.user_id AS "userId", u.name AS "userName", u.role AS "userRole"
-    FROM audit_log a LEFT JOIN users u ON u.id = a.user_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY a.id DESC LIMIT $${p.length}`, p);
+  const [rows, actions] = await Promise.all([q<any>(`SELECT a.id, a.at, a.action, a.entity, a.data, a.user_id AS "userId", u.name AS "userName", u.role AS "userRole"
+    FROM audit_log a LEFT JOIN users u ON u.id = a.user_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY a.id DESC LIMIT $${p.length}`, p),
+    q<{ prefix: string }>(`SELECT DISTINCT split_part(action, '.', 1) AS prefix FROM audit_log ORDER BY 1`)]);
   const more = rows.length > f.limit;
   const items = rows.slice(0, f.limit);
-  const actions = await q<{ prefix: string }>(`SELECT DISTINCT split_part(action, '.', 1) AS prefix FROM audit_log ORDER BY 1`);
   return { items, nextBefore: more ? items[items.length - 1].id : null, actionPrefixes: actions.map(a => a.prefix) };
 }
 
 /* ── data management ── */
 export async function dataStatus() {
-  const count = async (t: string) => (await one<{ n: number }>(`SELECT count(*)::int AS n FROM ${t}`))!.n;
   const tables = ['outlets', 'vehicles', 'district_travel', 'service_allowance', 'calendar', 'traffic_speed', 'road_conditions', 'demand_weekly', 'users', 'orders', 'plans', 'trips', 'stop_events', 'pods', 'receipts', 'exceptions', 'deferrals', 'notifications', 'attachments', 'audit_log'];
-  const counts: Record<string, number> = {};
-  for (const t of tables) counts[t] = await count(t);
-  const cal = await one<any>(`SELECT to_char(min(date),'YYYY-MM-DD') AS "from", to_char(max(date),'YYYY-MM-DD') AS "to" FROM calendar`);
-  const roads = await one<any>(`SELECT to_char(min(date),'YYYY-MM-DD') AS "from", to_char(max(date),'YYYY-MM-DD') AS "to" FROM road_conditions`);
-  const demand = await q<any>(`SELECT source, count(*)::int AS rows, min(iso_year * 100 + iso_week) AS "fromWeek", max(iso_year * 100 + iso_week) AS "toWeek", max(imported_at) AS "importedAt" FROM demand_weekly GROUP BY source ORDER BY source`);
-  const files = await one<any>(`SELECT count(*)::int AS n, coalesce(sum(bytes),0)::bigint AS bytes, count(*) FILTER (WHERE storage = 'supabase')::int AS supabase FROM attachments`);
-  const orders = await one<any>(`SELECT to_char(min(delivery_date),'YYYY-MM-DD') AS "from", to_char(max(delivery_date),'YYYY-MM-DD') AS "to" FROM orders`);
+  // every count in one statement, and the other reads side by side: one wait for the database instead of ~20
+  const [countRow, cal, roads, demand, files, orders] = await Promise.all([
+    one<Record<string, number>>(`SELECT ${tables.map(t => `(SELECT count(*)::int FROM ${t}) AS "${t}"`).join(', ')}`),
+    one<any>(`SELECT to_char(min(date),'YYYY-MM-DD') AS "from", to_char(max(date),'YYYY-MM-DD') AS "to" FROM calendar`),
+    one<any>(`SELECT to_char(min(date),'YYYY-MM-DD') AS "from", to_char(max(date),'YYYY-MM-DD') AS "to" FROM road_conditions`),
+    q<any>(`SELECT source, count(*)::int AS rows, min(iso_year * 100 + iso_week) AS "fromWeek", max(iso_year * 100 + iso_week) AS "toWeek", max(imported_at) AS "importedAt" FROM demand_weekly GROUP BY source ORDER BY source`),
+    one<any>(`SELECT count(*)::int AS n, coalesce(sum(bytes),0)::bigint AS bytes, count(*) FILTER (WHERE storage = 'supabase')::int AS supabase FROM attachments`),
+    one<any>(`SELECT to_char(min(delivery_date),'YYYY-MM-DD') AS "from", to_char(max(delivery_date),'YYYY-MM-DD') AS "to" FROM orders`),
+  ]);
+  const counts: Record<string, number> = { ...countRow! };
   return { counts, calendar: cal, roadConditions: roads, demand, attachments: { count: files.n, bytes: Number(files.bytes), inSupabase: files.supabase }, orders, dataDir: config.dataDir, demoMode: config.demoMode };
 }
 
@@ -518,14 +520,16 @@ export async function systemHealth() {
   const t0 = Date.now();
   const db = await one<any>(`SELECT version() AS version, current_database() AS name, now() AS now`);
   const dbMs = Date.now() - t0;
-  const migrations = await q<any>(`SELECT name, applied_at AS "appliedAt" FROM schema_migrations ORDER BY name`);
-  const rls = await q<any>(`SELECT c.relname AS table, c.relrowsecurity AS rls FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1`);
-  // storage: database size and the biggest tables (row counts are the planner's estimates)
-  const dbSize = await one<{ bytes: string }>(`SELECT pg_database_size(current_database())::text AS bytes`);
-  const tables = await q<{ name: string; rows: number; bytes: string }>(`SELECT c.relname AS name, greatest(c.reltuples, 0)::bigint::int AS rows, pg_total_relation_size(c.oid)::text AS bytes
-    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8`);
+  const [migrations, rls, dbSize, tables, supabase] = await Promise.all([
+    q<any>(`SELECT name, applied_at AS "appliedAt" FROM schema_migrations ORDER BY name`),
+    q<any>(`SELECT c.relname AS table, c.relrowsecurity AS rls FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1`),
+    // storage: database size and the biggest tables (row counts are the planner's estimates)
+    one<{ bytes: string }>(`SELECT pg_database_size(current_database())::text AS bytes`),
+    q<{ name: string; rows: number; bytes: string }>(`SELECT c.relname AS name, greatest(c.reltuples, 0)::bigint::int AS rows, pg_total_relation_size(c.oid)::text AS bytes
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8`),
+    config.authProvider === 'supabase' || config.storageProvider === 'supabase' ? sbHealth() : Promise.resolve(null),
+  ]);
   const mem = process.memoryUsage();
-  const supabase = config.authProvider === 'supabase' || config.storageProvider === 'supabase' ? await sbHealth() : null;
   return {
     status: 'ok', uptimeSec: Math.round((Date.now() - started) / 1000), node: process.version, env: config.env,
     database: { ok: true, latencyMs: dbMs, name: db.name, version: String(db.version).split(' ').slice(0, 2).join(' '), ssl: config.databaseSsl, pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount } },
