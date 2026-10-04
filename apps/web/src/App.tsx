@@ -4,6 +4,7 @@ import { HOME, useAuth } from './lib/auth';
 import type { Role } from './lib/api';
 import { Loading } from './components/common';
 import SignIn from './pages/SignIn';
+import AdminSignIn from './pages/AdminSignIn';
 
 const DispatcherApp = lazy(() => import('./pages/dispatcher/DispatcherApp'));
 const LoaderApp = lazy(() => import('./pages/loader/LoaderApp'));
@@ -16,7 +17,7 @@ const Account = lazy(() => import('./pages/Account'));
 function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
   const { user } = useAuth();
   const loc = useLocation();
-  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname)}`} replace />;
+  if (!user) return <Navigate to={`${roles.length === 1 && roles[0] === 'admin' ? '/admin/login' : '/login'}?next=${encodeURIComponent(loc.pathname)}`} replace />;
   if (user.mustChangePassword) return <Navigate to="/account?required=1" replace />;
   if (!roles.includes(user.role)) return <Navigate to={HOME[user.role]} replace />;
   return <Suspense fallback={<Loading variant="page" />}>{children}</Suspense>;
@@ -27,6 +28,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={user && !user.mustChangePassword ? <Navigate to={HOME[user.role]} replace /> : <SignIn />} />
+      <Route path="/admin/login" element={user && !user.mustChangePassword ? <Navigate to={HOME[user.role]} replace /> : <AdminSignIn />} />
       <Route path="/account" element={user ? <Suspense fallback={<Loading variant="page" />}><Account /></Suspense> : <Navigate to="/login" replace />} />
       <Route path="/a/*" element={<Guard roles={['admin']}><AdminApp /></Guard>} />
       <Route path="/d/*" element={<Guard roles={['dispatcher', 'admin']}><DispatcherApp /></Guard>} />

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import 'tailwindcss';
 
 /* Pathwise design tokens */
@@ -6,6 +6,7 @@
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, 'Segoe UI', sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-hero: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
 
   --color-teal-50: #f0fdfa;
   --color-teal-100: #ccfbf1;
@@ -75,7 +76,7 @@ body { margin: 0; }
 @keyframes rise-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .anim-rise { animation: rise-in .38s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes page-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.anim-page { animation: page-in .28s cubic-bezier(.2,.8,.2,1) both; }
+.anim-page { animation: page-in .28s cubic-bezier(.2,.8,.2,1) backwards; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
@@ -83,3 +84,45 @@ body { margin: 0; }
 /* Translucent header that content scrolls under (see GlassHeader). Leaflet controls clear the top bar inside .under-nav. */
 .glass-bar { background: rgba(255,255,255,.62); -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%); border-bottom: .5px solid rgba(15,23,42,.12); }
 .under-nav .leaflet-top { margin-top: 4.25rem; }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+.anim-menu { animation: menu-in .14s cubic-bezier(.2,.8,.2,1); transform-origin: top; }
+@keyframes slide-in-left { from { transform: translateX(-100%); } to { transform: none; } }
+.anim-slide { animation: slide-in-left .24s cubic-bezier(.2,.8,.2,1); }
+
+/* Large displays (1440p, ultrawide, 4K at 100%): scale the app shell up so text and controls stay a readable size.
+   The factor depends on both width and height so a wide-but-short window is not blown up. Shells that opt in
+   (.pw-zoom) divide their height by the factor so they still fill the screen exactly. */
+:root { --pw-zoom: 1; }
+@media (min-width: 2400px) and (min-height: 1200px) { :root { --pw-zoom: 1.25; } }
+@media (min-width: 3200px) and (min-height: 1800px) { :root { --pw-zoom: 1.5; } }
+.pw-zoom { zoom: var(--pw-zoom); height: calc(100dvh / var(--pw-zoom)); }
+.pw-zoom-min { zoom: var(--pw-zoom); min-height: calc(100dvh / var(--pw-zoom)); }
+/* touch screens: keep small buttons easy to hit */
+@media (pointer: coarse) {
+  .app-shell :is(button, select, [role=combobox], input:not([type=checkbox]):not([type=radio])) { min-height: 40px; }
+  .app-shell button { min-width: 40px; }
+  .app-shell input[type=checkbox] { width: 20px; height: 20px; }
+  .app-shell nav a { min-height: 44px; }
+  .app-shell .leaflet-control-zoom a { width: 40px; height: 40px; line-height: 40px; }
+  /* bigger invisible hit area around map pins; the pin itself looks the same */
+  .app-shell .leaflet-marker-icon::before { content: ''; position: absolute; inset: -9px; border-radius: 9999px; }
+}
+/* Leaflet reads raw screen coordinates; cancel the shell's zoom inside the map so clicks and drags line up. */
+.pw-unzoom { zoom: calc(1 / var(--pw-zoom)); }
+/* Map controls are ordinary buttons, so they can take the shell's scale back (markers and tiles stay 1:1). */
+.pw-unzoom .leaflet-control-container { zoom: var(--pw-zoom); }
+/* Below lg the tracking map carries a List/Map switch at the top left; keep Leaflet's zoom buttons under it. */
+@media (max-width: 1023px) { .under-nav .leaflet-top.leaflet-left { margin-top: 7.5rem; } }
+
+/* Shared page loader: three rings pulse outward from a centre dot */
+.pw-loader { position: relative; width: 56px; height: 56px; display: block; }
+.pw-loader i { position: absolute; inset: 0; border-radius: 9999px; border: 2px solid #14B8A6; opacity: 0; animation: pw-ring 1.8s cubic-bezier(.2,.6,.3,1) infinite; }
+.pw-loader i:nth-child(2) { animation-delay: .6s; border-color: #6366F1; }
+.pw-loader i:nth-child(3) { animation-delay: 1.2s; }
+.pw-loader b { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 9999px; background: linear-gradient(135deg,#2DD4BF,#0F766E); box-shadow: 0 0 0 4px rgba(20,184,166,.15); animation: pw-dot 1.8s ease-in-out infinite; }
+.pw-loader-label { animation: pulse-soft 1.6s ease-in-out infinite; }
+@keyframes pw-ring { 0% { transform: scale(.25); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
+@keyframes pw-dot { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { .pw-loader i, .pw-loader b, .pw-loader-label { animation: none; } .pw-loader i:first-child { opacity: .5; transform: scale(.7); } }
+@keyframes toast-in { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
+.anim-toast { animation: toast-in .24s cubic-bezier(.2,.9,.3,1.1); }

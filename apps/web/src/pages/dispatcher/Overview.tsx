@@ -6,6 +6,7 @@ import { ErrorState, Loading, useApi } from '../../components/common';
 import { BRAND_COLOR } from '../../components/tags';
 import { useAuth } from '../../lib/auth';
 import { dayLabel, hhmm, useNow } from '../../lib/clock';
+import { useDepot } from './DispatcherApp';
 
 type Seg = { pct: number; color: string };
 const TINT = {
@@ -53,7 +54,8 @@ export default function Overview() {
   const nav = useNavigate();
   const { user } = useAuth();
   const now = useNow(30_000);
-  const q = useApi<any>(['overview'], '/overview', { refetchInterval: 15_000 });
+  const depot = useDepot();
+  const q = useApi<any>(['overview', depot], depot === 'all' ? '/overview' : `/overview?depot=${depot}`, { refetchInterval: 15_000, placeholderData: (prev: any) => prev });
   const tr = useApi<any>(['tracking'], '/tracking', { refetchInterval: 20_000 });
   if (q.isLoading) return <Loading />;
   if (q.error) return <ErrorState error={q.error} retry={q.refetch} />;
@@ -62,7 +64,7 @@ export default function Overview() {
   const greet = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   const pub = o.plan.published;
   const nextRun = o.nextDay?.holiday ? 'the next operating day' : dayLabel(o.nextDay?.date ?? o.date);
-  const trips = tr.data?.trips ?? [];
+  const trips = (tr.data?.trips ?? []).filter((t: any) => depot === 'all' || t.vehicle.depot === depot);
   const offline = trips.filter((t: any) => t.offline);
   const onRoad = trips.filter((t: any) => t.status === 'in_progress');
   const lateRisk = trips.filter((t: any) => t.lateRisk?.length);
@@ -85,7 +87,8 @@ export default function Overview() {
   const brandsTotal = o.orders.byBrand.reduce((a: number, b: any) => a + b.n, 0) || 1;
   const fleetHue: Hue[] = ['sky', 'indigo', 'violet', 'teal'];
   return (
-    <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 pt-[calc(4rem+1.5rem)] pb-6 space-y-6">
+    <div className="relative mx-auto w-full max-w-[1600px] px-4 sm:px-6 pt-[calc(4rem+1.5rem)] pb-6 space-y-6">
+      {q.isPlaceholderData && <Loading variant="overlay" label={`Loading ${depot === 'all' ? 'all depots' : depot}…`} />}
       <section className="bg-white rounded-2xl border border-[#E6E9F0] shadow-[0_1px_2px_rgba(16,24,40,.04)] overflow-hidden grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
         <div className="p-6 flex gap-5" style={{ background: '#F0FDFA' }}>
           <div className="hidden sm:block self-start w-[68px] flex-shrink-0 rounded-xl overflow-hidden bg-white ring-1 ring-[#E4E7EC] shadow-[0_6px_16px_-10px_rgba(15,23,42,.35)] text-center">

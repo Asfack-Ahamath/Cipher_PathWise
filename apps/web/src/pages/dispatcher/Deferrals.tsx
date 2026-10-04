@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarClock, CheckCircle2, ShieldCheck, Store, History, ChevronRight, Clock, AlertTriangle, KanbanSquare } from 'lucide-react';
 import { BrandTag, TempTag, OutletBadges } from '../../components/tags';
 import { Toolbar, Tabs, Button, Callout, KeyValues, Pill, Overline, Field, inputCls, Empty, cx } from '../../components/ds';
+import { Select } from '../../components/Select';
 import { ErrorState, Loading, useAct, useApi, useReference, fmt } from '../../components/common';
 import { post } from '../../lib/api';
 import { dayLabel, hhmm } from '../../lib/clock';
@@ -106,9 +107,8 @@ export default function Deferrals() {
             {sel.escalated && <Callout tone="danger" icon={<AlertTriangle size={15} className="text-red-600" />} title="Deferred two runs in a row">This outlet was also deferred last run. It is escalated and goes first next time.</Callout>}
             {sel.proposed ? (
               <Field label="Reason (required)">
-                <select value={curReason} onChange={e => setReasonEdit(r => ({ ...r, [sel.key]: e.target.value }))} className={inputCls}>
-                  {Object.entries(reasons).map(([k, v]: any) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
+                <Select value={curReason} onChange={v => setReasonEdit(r => ({ ...r, [sel.key]: v }))} aria-label="Reason"
+                  options={Object.entries(reasons).map(([k, v]: any) => ({ value: k, label: v.label as string }))} />
               </Field>
             ) : <div><Overline>Reason</Overline><p className="mt-1 text-[13px] font-semibold text-slate-900">{reasons[sel.reason]?.label ?? sel.reason}</p></div>}
             <div><Overline>Why · from the planner</Overline><p className="mt-1 text-[13px] text-slate-700 leading-5">{sel.why}</p></div>

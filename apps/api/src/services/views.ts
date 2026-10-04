@@ -10,31 +10,31 @@ import { liveEta } from './live.js';
 
 /* Read models for the dispatcher's screens. */
 
-export async function overview(date?: string) {
+export async function overview(date?: string, depot?: string) {
   const d = date ?? await activePlanDate();
   const net = await loadNetwork();
   const { operations } = await getSettings();
   const [orders, byStatus, trips, exceptions, pub, cal] = await Promise.all([
-    q<any>(`SELECT o.temp, ot.brand, o.status, o.m3 FROM orders o JOIN outlets ot ON ot.id = o.outlet_id WHERE (o.delivery_date = $1 OR o.id IN (SELECT order_id FROM deferrals WHERE from_date = $1)) AND o.parent_order_id IS NULL AND o.status <> 'cancelled'`, [d]),
+    q<any>(`SELECT o.temp, ot.brand, o.status, o.m3 FROM orders o JOIN outlets ot ON ot.id = o.outlet_id WHERE (o.delivery_date = $1 OR o.id IN (SELECT order_id FROM deferrals WHERE from_date = $1)) AND o.parent_order_id IS NULL AND o.status <> 'cancelled' AND ($2::text IS NULL OR ot.depot = $2)`, [d, depot ?? null]),
     // whole orders moved to another day; part-deferrals (shortfalls, replacements) are counted separately
-    q<any>(`SELECT kind, reason, count(*)::int AS n, count(*) FILTER (WHERE units IS NOT NULL)::int AS partial FROM deferrals WHERE from_date = $1 GROUP BY kind, reason`, [d]),
-    q<any>(`SELECT status, count(*)::int AS n FROM trips WHERE plan_date = $1 AND status <> 'cancelled' GROUP BY status`, [d]),
-    q<any>(`SELECT id, type, title, detail, raised_at AS "raisedAt", severity FROM exceptions WHERE status = 'open' ORDER BY raised_at DESC`),
+    q<any>(`SELECT df.kind, df.reason, count(*)::int AS n, count(*) FILTER (WHERE df.units IS NOT NULL)::int AS partial FROM deferrals df JOIN orders o ON o.id = df.order_id JOIN outlets ot ON ot.id = o.outlet_id WHERE df.from_date = $1 AND ($2::text IS NULL OR ot.depot = $2) GROUP BY df.kind, df.reason`, [d, depot ?? null]),
+    q<any>(`SELECT t.status, count(*)::int AS n FROM trips t JOIN vehicles ve ON ve.id = t.vehicle_id WHERE t.plan_date = $1 AND t.status <> 'cancelled' AND ($2::text IS NULL OR ve.depot = $2) GROUP BY t.status`, [d, depot ?? null]),
+    q<any>(`SELECT e.id, e.type, e.title, e.detail, e.raised_at AS "raisedAt", e.severity, COALESCE(ot.depot, ve.depot) AS depot FROM exceptions e LEFT JOIN trips t ON t.id = e.trip_id LEFT JOIN vehicles ve ON ve.id = t.vehicle_id LEFT JOIN outlets ot ON ot.id = e.outlet_id WHERE e.status = 'open' AND ($1::text IS NULL OR COALESCE(ot.depot, ve.depot) IS NULL OR COALESCE(ot.depot, ve.depot) = $1) ORDER BY e.raised_at DESC`, [depot ?? null]),
     one<any>(`SELECT version, published_at AS "publishedAt" FROM plans WHERE plan_date = $1 AND status = 'published'`, [d]),
     one<any>(`SELECT is_payday AS "isPayday", holiday, festival_ramp AS "festivalRamp", monsoon FROM calendar WHERE date = $1`, [d]),
   ]);
   const draft = await one<any>(`SELECT version FROM plans WHERE plan_date = $1 AND status = 'draft'`, [d]);
-  const vehicles = [...net.vehicles.values()];
+  const vehicles = [...net.vehicles.values()].filter(v => !depot || v.depot === depot);
   const tripCount = Object.fromEntries(trips.map(t => [t.status, t.n]));
   const deferred = byStatus.reduce((a, r) => a + r.n - r.partial, 0);
   const partial = byStatus.reduce((a, r) => a + r.partial, 0);
   const next = await one<any>(`SELECT to_char(date,'YYYY-MM-DD') AS date, holiday FROM calendar WHERE date > $1 ORDER BY date LIMIT 1`, [d]);
   const view = pub ? await planView(d) : null;
-  const closest = view ? Object.entries(view.usage).map(([id, u]: any) => ({ id, depot: net.vehicles.get(id)!.depot, fresh: u.fresh, freshBudget: u.freshBudget, fuelAfter: Math.round((u.fuelUsedL + u.fuelAddL) * 10) / 10, fuelQuota: u.fuelQuotaL })).sort((a, b) => b.fresh / b.freshBudget - a.fresh / a.freshBudget).slice(0, 4) : [];
+  const closest = view ? Object.entries(view.usage).filter(([id]) => !depot || net.vehicles.get(id)!.depot === depot).map(([id, u]: any) => ({ id, depot: net.vehicles.get(id)!.depot, fresh: u.fresh, freshBudget: u.freshBudget, fuelAfter: Math.round((u.fuelUsedL + u.fuelAddL) * 10) / 10, fuelQuota: u.fuelQuotaL })).sort((a, b) => b.fresh / b.freshBudget - a.fresh / a.freshBudget).slice(0, 4) : [];
   const reefers = vehicles.filter(v => v.temp === 'reefer');
-  const unconfirmed = await one<{ n: number }>(`SELECT count(*)::int AS n FROM orders o WHERE o.delivery_date = $1 AND o.status IN ('delivered','partial') AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.order_id = o.id)
+  const unconfirmed = await one<{ n: number }>(`SELECT count(*)::int AS n FROM orders o JOIN outlets ot ON ot.id = o.outlet_id WHERE o.delivery_date = $1 AND ($4::text IS NULL OR ot.depot = $4) AND o.status IN ('delivered','partial') AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.order_id = o.id)
       AND EXISTS (SELECT 1 FROM trip_orders tor JOIN stop_events e ON e.trip_id = tor.trip_id AND e.outlet_id = o.outlet_id AND e.type = 'delivered' WHERE tor.order_id = o.id AND e.device_time < $2::timestamptz - make_interval(mins => $3))`,
-    [d, nowSync(), Math.round(operations.receiptConfirmHours * 60)]);
+    [d, nowSync(), Math.round(operations.receiptConfirmHours * 60), depot ?? null]);
   return {
     date: d, dateLabel: dayLabel(d), now: nowSync().toISOString(), calendar: cal, nextDay: next,
     plan: { published: pub, draft: draft ? { version: draft.version } : null },
@@ -56,7 +56,7 @@ export async function overview(date?: string) {
       reeferAvailable: reefers.filter(v => v.status === 'available').length, reeferTotal: reefers.length,
     },
     trips: { total: trips.reduce((a, t) => a + t.n, 0), ...tripCount },
-    chilled: view ? { reeferTrips: view.trips.filter(t => t.vehicle.temp === 'reefer').length, possible: reefers.filter(v => v.status === 'available').length * net.rules.maxTripsPerVehicle, deferredChilled: view.deferrals.filter((x: any) => x.temp === 'chilled' && !x.units).length } : null,
+    chilled: view ? { reeferTrips: view.trips.filter(t => t.vehicle.temp === 'reefer' && (!depot || t.vehicle.depot === depot)).length, possible: reefers.filter(v => v.status === 'available').length * net.rules.maxTripsPerVehicle, deferredChilled: view.deferrals.filter((x: any) => x.temp === 'chilled' && !x.units).length } : null,
     closest,
     attention: exceptions,
   };

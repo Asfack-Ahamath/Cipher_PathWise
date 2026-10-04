@@ -4,6 +4,7 @@ import { KanbanSquare, ChevronDown, Package, AlertTriangle, XCircle, Snowflake, 
 import CapacityBar from '../../components/CapacityBar';
 import { TempTag, OutletBadges, BRAND_COLOR } from '../../components/tags';
 import { Toolbar, Button, Callout, Segmented, Pill, PILL_TONE, Modal, Count, inputCls, Overline, IconChip, HUE, cx, Field } from '../../components/ds';
+import { Select } from '../../components/Select';
 import { ErrorState, Loading, Status, useAct, useApi, useReference, useToast, fmt } from '../../components/common';
 import { del, post } from '../../lib/api';
 import { dayLabel, hhmm } from '../../lib/clock';
@@ -154,16 +155,16 @@ export default function PlanBoard() {
         </div>
       </Toolbar>
 
-      <div className="flex flex-1 min-h-0 flex-col md:flex-row">
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto md:overflow-visible md:flex-row">
         {/* Unassigned */}
-        <div className="md:w-[300px] 2xl:w-[340px] max-h-[45vh] md:max-h-none flex-shrink-0 flex flex-col min-h-0 bg-[#F9FAFB] border-b md:border-b-0 md:border-r border-[#E4E7EC]">
+        <div className="md:w-[300px] 2xl:w-[340px] flex-shrink-0 flex flex-col md:min-h-0 bg-[#F9FAFB] border-b md:border-b-0 md:border-r border-[#E4E7EC]">
           <div className="flex-shrink-0 px-4 pb-3.5 pt-[calc(var(--top-h,4rem)+0.875rem)] bg-white border-b border-[#E4E7EC] space-y-3">
             <div className="flex items-center justify-between"><h2 className="text-[14px] font-semibold text-slate-900">Not on a trip</h2><Count n={unassignedAll.length} tone={unassignedAll.length ? 'warn' : 'good'} /></div>
             <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} className={`${inputCls} pl-9`} placeholder="Order or outlet ID" aria-label="Search unassigned" /></div>
             <Segmented size="sm" value={filter} onChange={setFilter} options={[{ id: 'all', label: 'All' }, { id: 'Fresh', label: 'Fresh' }, { id: 'Style', label: 'Style' }, { id: 'Tech', label: 'Tech' }]} />
             <p className="text-[12px] text-slate-500">Priority: skipped last run, then days since last served.</p>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          <div className="md:flex-1 md:overflow-y-auto p-3 space-y-4">
             {Object.keys(groups).length === 0 && <div className="py-10 text-center"><CheckCircle2 size={24} className="mx-auto text-emerald-600" /><div className="mt-2 text-[13px] font-semibold text-slate-800">{v.mode === 'empty' ? 'Press Auto-plan to start' : 'Everything is placed'}</div></div>}
             {v.mode === 'empty' && unassignedAll.length > 0 && <Callout tone="info" title={`${unassignedAll.length} orders to plan`}>Press Auto-plan. It fills vehicles by priority, keeps every rule, and explains each order it cannot fit.</Callout>}
             {Object.entries(groups).map(([g, list]) => (
@@ -183,10 +184,8 @@ export default function PlanBoard() {
                       {o.deferredYesterday && <div className="text-[12px] font-semibold text-red-700 flex items-center gap-1.5"><AlertTriangle size={13} />Skipped last run — serve first</div>}
                       {def && <div className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5"><span className="font-semibold">Defer · {ref.data?.reasons?.[def.reason]?.label ?? def.reason}</span> <span className="text-amber-700">({def.kind})</span><div className="mt-0.5 text-amber-800">{def.why}</div></div>}
                       {(
-                        <select value="" onChange={e => e.target.value && doMove([o.id], e.target.value)} className={`${inputCls} h-8 text-[12px]`} aria-label={`Assign ${o.id}`} disabled={move.isPending}>
-                          <option value="">Assign to vehicle and trip…</option>
-                          {targetsFor(o).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-                        </select>
+                        <Select value="" onChange={v => v && doMove([o.id], v)} size="sm" aria-label={`Assign ${o.id}`} disabled={move.isPending} placeholder="Assign to vehicle and trip…" menuWidth={280}
+                          options={targetsFor(o).map(t => ({ value: t.id, label: t.label }))} />
                       )}
                     </div>
                   );
@@ -198,7 +197,7 @@ export default function PlanBoard() {
         </div>
 
         {/* Vehicles */}
-        <div className="flex-1 min-w-0 overflow-y-auto @container pt-[var(--top-h,4rem)]">
+        <div className="flex-shrink-0 md:flex-shrink md:flex-1 min-w-0 md:overflow-y-auto @container md:pt-[var(--top-h,4rem)]">
           <div className="mx-auto max-w-[1280px] p-4 sm:p-5 space-y-4">
             {v.mode === 'live' && <Callout tone="success" title={`Plan v${v.published.version} is live`}>Loaders, drivers and stores are working from it. Any change here opens a new draft; when you republish, everyone affected gets a "what changed" list. Trips already released or on the road are locked.</Callout>}
             {v.mode === 'draft' && v.published && <Callout tone="warning" title="You are editing a new version">Nobody sees these changes until you publish. Trips already released stay as they are.</Callout>}
@@ -258,12 +257,9 @@ export default function PlanBoard() {
                                     <span className={cx('tabular', st.late ? 'text-red-600 font-semibold' : st.lateRisk ? 'text-amber-700 font-semibold' : 'text-slate-700')} title={st.waitMin ? `Waits ${st.waitMin} min for the window` : undefined}>{st.start}</span>
                                     <span className="tabular text-slate-500">{ot?.mallWindow ? <span className="text-violet-700 font-medium" title={`Mall window ${ot.mallWindow}`}>{ot.mallWindow} (M)</span> : `${ot?.open}–${ot?.close}`}</span>
                                     {!locked(t) ? (
-                                      <span className="relative w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-700" title="Move or defer this stop"><MoreVertical size={16} />
-                                        <select value="" onChange={e => e.target.value && doMove(st.orderIds, e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" aria-label={`Move ${st.outletId}`}>
-                                        <option value="">Move…</option>
-                                        <option value="defer">Defer (not today)</option>
-                                        {targetsFor(orders.get(st.orderIds[0]) ?? { outletId: st.outletId }).filter(x => x.id !== `${vid}|${n}`).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
-                                      </select></span>
+                                      <Select value="" onChange={v => v && doMove(st.orderIds, v)} aria-label={`Move ${st.outletId}`} placeholder="Move…" menuWidth={260}
+                                        trigger={<MoreVertical size={16} />} triggerClassName="w-6 h-6 text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                                        options={[{ value: 'defer', label: 'Defer (not today)', hint: 'Choose a reason next' }, ...targetsFor(orders.get(st.orderIds[0]) ?? { outletId: st.outletId }).filter(x => x.id !== `${vid}|${n}`).map(x => ({ value: x.id, label: x.label }))]} />
                                     ) : <span />}
                                   </div>
                                 );
@@ -339,7 +335,7 @@ function DeferDialog({ orderId, reasons, onClose, onDefer }: { orderId: string; 
   return (
     <Modal title={`Defer ${orderId}`} onClose={onClose} width={460}>
       <div className="space-y-4">
-        <Field label="Reason" hint="The store sees the plain-language version of this reason."><select className={inputCls} value={reason} onChange={e => setReason(e.target.value)}>{Object.entries(reasons).filter(([k]) => k !== 'after_cutoff').map(([k, r]: any) => <option key={k} value={k}>{r.label}</option>)}</select></Field>
+        <Field label="Reason" hint="The store sees the plain-language version of this reason."><Select value={reason} onChange={setReason} aria-label="Reason" options={Object.entries(reasons).filter(([k]) => k !== 'after_cutoff').map(([k, r]: any) => ({ value: k, label: r.label as string }))} /></Field>
         {reasons[reason] && <Callout tone="neutral" title="Store will read">{reasons[reason].store}</Callout>}
         <Field label="Note for the record (optional)"><input className={inputCls} value={why} onChange={e => setWhy(e.target.value)} placeholder="e.g. Reefer space kept for OUT116" /></Field>
         <div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="warning" onClick={() => onDefer(reason, why || 'Deferred by the dispatcher.')}>Defer order</Button></div>

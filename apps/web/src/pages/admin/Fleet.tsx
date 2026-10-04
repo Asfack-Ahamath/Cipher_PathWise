@@ -1,30 +1,57 @@
 import { useMemo, useState } from 'react';
-import { Search, Truck, Wrench } from 'lucide-react';
-import { Button, Card, Field, Modal, Segmented, cx, inputCls, thCls } from '../../components/ds';
+import { Download, Search, Truck, Wrench } from 'lucide-react';
+import { Button, Card, Empty, Field, Modal, cx, inputCls, thCls } from '../../components/ds';
+import { Select } from '../../components/Select';
 import { ErrorState, Loading, fmt, useAct, useApi } from '../../components/common';
 import { patch } from '../../lib/api';
-import { AdminPage } from './AdminApp';
+import { downloadCsv, stamp } from '../../lib/csv';
+import { AdminPage, FilterBar } from './AdminApp';
 
 export default function Fleet() {
   const q = useApi<any[]>(['admin-vehicles'], '/admin/vehicles');
   const [depot, setDepot] = useState('all');
   const [text, setText] = useState('');
+  const [status, setStatus] = useState('all');
   const [edit, setEdit] = useState<any | null>(null);
-  const rows = useMemo(() => (q.data ?? []).filter(v => (depot === 'all' || v.depot === depot) && (!text || `${v.id} ${v.driverName} ${v.type} ${v.temp}`.toLowerCase().includes(text.toLowerCase()))), [q.data, depot, text]);
+  const rows = useMemo(() => (q.data ?? []).filter(v => (depot === 'all' || v.depot === depot) && (status === 'all' || v.status === status) && (!text || `${v.id} ${v.driverName} ${v.type} ${v.temp}`.toLowerCase().includes(text.toLowerCase()))), [q.data, depot, status, text]);
   if (q.isLoading) return <Loading />;
   if (q.error) return <ErrorState error={q.error} retry={q.refetch} />;
   const workshop = (q.data ?? []).filter(v => v.status === 'in_workshop').length;
   return (
-    <AdminPage title="Fleet" subtitle={`${q.data?.length} vehicles · ${workshop} in the workshop. Capacities come from vehicles.csv; the planner never uses a vehicle marked in the workshop.`}>
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <span className="relative"><Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={text} onChange={e => setText(e.target.value)} placeholder="Vehicle or driver" className={cx(inputCls, 'pl-8 w-56')} aria-label="Search vehicles" /></span>
-        <Segmented size="sm" value={depot} onChange={setDepot} options={[{ id: 'all', label: 'Both depots' }, { id: 'Peliyagoda', label: 'Peliyagoda' }, { id: 'Kandy', label: 'Kandy' }]} />
-      </div>
+    <AdminPage title="Fleet" subtitle={`${q.data?.length} vehicles · ${workshop} in the workshop. Capacities come from vehicles.csv; the planner never uses a vehicle marked in the workshop.`}
+      actions={<Button icon={<Download size={15} />} disabled={!rows.length} onClick={() => downloadCsv(`pathwise-fleet-${stamp()}.csv`, ['Vehicle', 'Depot', 'Type', 'Temperature', 'Weight cap (kg)', 'Volume cap (m3)', 'Fuel used (L)', 'Fuel quota (L)', 'Driver', 'Status', 'Note'],
+        rows.map(v => [v.id, v.depot, v.type, v.temp, v.weightCap, v.volumeCap, v.fuelUsedL, v.fuelQuotaL, v.driverName, v.status === 'available' ? 'Available' : 'In the workshop', v.statusNote]))}>Export CSV</Button>}>
+      <FilterBar>
+        <span className="relative sm:w-64"><Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={text} onChange={e => setText(e.target.value)} placeholder="Vehicle or driver" className={cx(inputCls, 'pl-8')} aria-label="Search vehicles" /></span>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <div className="sm:w-44"><Select value={depot} onChange={setDepot} aria-label="Depot" options={[{ value: 'all', label: 'Both depots' }, { value: 'Peliyagoda', label: 'Peliyagoda' }, { value: 'Kandy', label: 'Kandy' }]} /></div>
+          <div className="sm:w-44"><Select value={status} onChange={setStatus} aria-label="Status" options={[{ value: 'all', label: 'Any status' }, { value: 'available', label: 'Available', icon: <span className="block w-2 h-2 rounded-full bg-emerald-600" /> }, { value: 'in_workshop', label: 'In the workshop', icon: <Wrench size={13} /> }]} /></div>
+        </div>
+        <span className="sm:ml-auto text-[12px] text-slate-500">{rows.length} of {q.data?.length ?? 0}</span>
+      </FilterBar>
       <Card pad={false}>
-        <div className="overflow-x-auto">
+        <ul className="md:hidden divide-y divide-[#EEF0F3]">
+          {rows.length === 0 && <li><Empty icon={<Truck size={20} />} title="No vehicle matches">Change the search or the filters.</Empty></li>}
+          {rows.map(v => {
+            const pct = Math.min(100, (v.fuelUsedL / v.fuelQuotaL) * 100);
+            return (
+              <li key={v.id} className="px-4 py-3.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0"><div className="font-semibold text-[14px] text-slate-900">{v.id} <span className="font-normal text-[12px] text-slate-500">· {v.depot}</span></div><div className="text-[12px] text-slate-500 capitalize">{v.type} · {v.temp} · {fmt(v.weightCap)} kg · {fmt(v.volumeCap, 1)} m³</div></div>
+                  {v.status === 'available' ? <span className="text-[12px] font-semibold text-emerald-700 flex-shrink-0">Available</span> : <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-amber-700 flex-shrink-0"><Wrench size={12} />{v.statusNote ?? 'Workshop'}</span>}
+                </div>
+                <div className="mt-2.5 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className={cx('h-full', pct > 90 ? 'bg-red-500' : pct > 75 ? 'bg-amber-500' : 'bg-teal-600')} style={{ width: `${pct}%` }} /></div>
+                <div className="mt-1 flex justify-between text-[11px] text-slate-500 tabular"><span>Fuel {fmt(v.fuelUsedL)} of {fmt(v.fuelQuotaL)} L</span><span>{v.driverName}</span></div>
+                <div className="mt-2.5"><Button size="sm" full icon={<Truck size={14} />} onClick={() => setEdit(v)}>Edit {v.id}</Button></div>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full min-w-[940px] text-[13px]">
             <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Vehicle', 'Depot', 'Type', 'Capacity', 'Fuel this week', 'Driver', 'Status', ''].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
             <tbody>
+              {rows.length === 0 && <tr><td colSpan={8}><Empty icon={<Truck size={20} />} title="No vehicle matches">Change the search or the filters.</Empty></td></tr>}
               {rows.map(v => {
                 const pct = Math.min(100, (v.fuelUsedL / v.fuelQuotaL) * 100);
                 return (
@@ -56,7 +83,7 @@ function VehicleDialog({ v, onClose }: { v: any; onClose: () => void }) {
   return (
     <Modal title={`${v.id} · ${v.type} ${v.temp} · ${v.depot}`} onClose={onClose} width={480}>
       <div className="grid sm:grid-cols-2 gap-4">
-        <Field label="Status"><select className={inputCls} value={f.status} onChange={e => setF({ ...f, status: e.target.value })}><option value="available">Available</option><option value="in_workshop">In the workshop</option></select></Field>
+        <Field label="Status"><Select value={f.status} onChange={v => setF({ ...f, status: v })} aria-label="Status" options={[{ value: 'available', label: 'Available' }, { value: 'in_workshop', label: 'In the workshop', icon: <Wrench size={13} /> }]} /></Field>
         <Field label="Reason (workshop)"><input className={inputCls} value={f.statusNote} placeholder="e.g. Brake service" onChange={e => setF({ ...f, statusNote: e.target.value })} /></Field>
         <Field label="Driver name"><input className={inputCls} value={f.driverName} onChange={e => setF({ ...f, driverName: e.target.value })} /></Field>
         <div />

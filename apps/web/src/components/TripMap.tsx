@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import { cx } from './ds';
 
 /* Open-source map: Leaflet + OpenStreetMap data (CARTO light tiles).
    The dataset has no outlet coordinates, so outlets sit at stable positions around their
@@ -59,5 +60,6 @@ export default function TripMap({ trips, selected, onSelect, fitKey, className }
     }
   }, [trips, selected, onSelect, fitKey]);
 
-  return <div ref={el} className={className ?? 'w-full h-full'} role="region" aria-label="Map of vehicles and stops" />;
+  // the inner box cancels any CSS zoom on the app shell (see .pw-unzoom) so Leaflet's pointer maths stays exact
+  return <div className={cx('relative isolate', className ?? 'w-full h-full')}><div ref={el} className="pw-unzoom absolute inset-0" role="region" aria-label="Map of vehicles and stops" /></div>;
 }
