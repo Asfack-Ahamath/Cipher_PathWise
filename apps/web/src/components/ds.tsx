@@ -85,14 +85,15 @@ export function PageHeader({ title, subtitle, actions, children, icon, hue = 'te
   );
 }
 /* A header pinned over the top of a page so content scrolls underneath it, blurred. It measures itself and publishes its
-   height (plus the 64 px top nav when navOffset) as --top-h on its parent, which must be `relative`; scroll panes in that
+   bottom edge (its height, plus the top nav when navOffset) as --top-h on its parent, which must be `relative`; scroll panes in that
    parent add `pt-[var(--top-h,4rem)]` so their first row starts below it. */
 export function GlassHeader({ children, className, navOffset = false }: { children: ReactNode; className?: string; navOffset?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = ref.current, parent = el?.parentElement;
     if (!el || !parent) return;
-    const set = () => parent.style.setProperty('--top-h', `${el.offsetHeight + (navOffset ? 64 : 0)}px`);
+    // measure where the bar really sits: the nav offset is 4rem, which is not 64 px when the root font size changes
+    const set = () => parent.style.setProperty('--top-h', `${el.offsetTop + el.offsetHeight}px`);
     set();
     const ro = new ResizeObserver(set);
     ro.observe(el);

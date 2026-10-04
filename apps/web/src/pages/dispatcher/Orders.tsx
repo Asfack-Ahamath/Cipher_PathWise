@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ClipboardList, Search, Phone, Smartphone, AlertTriangle, Plus, Clock, Lock, X, Pencil, Ban } from 'lucide-react';
+import { ClipboardList, Search, Phone, Smartphone, AlertTriangle, Plus, Clock, Lock, X, Pencil, Ban, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { Toolbar, Tabs, Segmented, Button, Callout, DetailPanel, Modal, Field, inputCls, KeyValues, Pill, PILL_TONE, Empty } from '../../components/ds';
 import { Select } from '../../components/Select';
 import { STATUS } from '../../components/StatusChip';
@@ -13,6 +13,26 @@ import { useDepot } from './DispatcherApp';
 /** Most units one order line can hold (the API enforces the same limit). */
 const MAX_UNITS = 500;
 
+/** Queue columns that can be sorted, and the value each one sorts on. */
+type SortKey = 'id' | 'outlet' | 'temp' | 'kg' | 'm3' | 'window' | 'served' | 'source' | 'placement';
+const SORT_VALUE: Record<SortKey, (o: any) => string | number> = {
+  id: o => o.id,
+  outlet: o => o.outletId,
+  temp: o => o.temp ?? '',
+  kg: o => o.kg,
+  m3: o => o.m3,
+  window: o => o.open,
+  // skipped last run counts as the longest wait
+  served: o => (o.deferredYesterday ? Infinity : o.daysSinceServed ?? 0),
+  source: o => o.submittedAt ?? '',
+  placement: o => (o.placement ? `0${o.placement}` : o.deferral ? `1${o.deferral.toDate}` : '2'),
+};
+const COLUMNS: { label: string; key?: SortKey; num?: boolean }[] = [
+  { label: 'Order', key: 'id' }, { label: 'Outlet', key: 'outlet' }, { label: 'Temp', key: 'temp' }, { label: 'Weight', key: 'kg', num: true },
+  { label: 'Volume', key: 'm3', num: true }, { label: 'Window', key: 'window' }, { label: 'Access' }, { label: 'Last served', key: 'served', num: true },
+  { label: 'Source', key: 'source' }, { label: 'Placement', key: 'placement' },
+];
+
 export default function Orders() {
   const depot = useDepot();
   const [tab, setTab] = useState<'queue' | 'late' | 'cancelled'>('queue');
@@ -22,6 +42,7 @@ export default function Orders() {
   const [brand, setBrand] = useState<'all' | 'Fresh' | 'Style' | 'Tech'>('all');
   const [status, setStatus] = useState<'all' | 'placed' | 'unplaced' | 'deferred'>('all');
   const [sel, setSel] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null);
   const [phoneOpen, setPhoneOpen] = useState(false);
   const q = useApi<any>(['orders'], '/orders', { refetchInterval: 30_000 });
   const ref = useReference();
@@ -35,11 +56,22 @@ export default function Orders() {
   const rows = all.filter(o => (brand === 'all' || o.brand === brand)
     && (status === 'all' || (status === 'placed' ? !!o.placement : status === 'deferred' ? !!o.deferral : !o.placement && !o.deferral))
     && (!s2 || o.id.toLowerCase().includes(s2) || o.outletId.toLowerCase().includes(s2) || o.district.toLowerCase().includes(s2)));
+  if (sort) {
+    const val = SORT_VALUE[sort.key];
+    rows.sort((a, b) => { const x = val(a), y = val(b); return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * sort.dir; });
+  }
+  // first click sorts A→Z (numbers largest first), second flips, third clears
+  const toggleSort = (key: SortKey, num?: boolean) => setSort(cur => {
+    const first: 1 | -1 = num ? -1 : 1;
+    if (cur?.key !== key) return { key, dir: first };
+    return cur.dir === first ? { key, dir: first === 1 ? -1 : 1 } : null;
+  });
   const s = sel ? d.orders.find((o: any) => o.id === sel) : null;
   const sOut = s ? outlets.get(s.outletId) : null;
   const twin = s ? d.orders.filter((o: any) => o.outletId === s.outletId && o.id !== s.id) : [];
   const counts = { app: all.filter(o => o.source === 'app').length, phone: all.filter(o => o.source === 'phone').length };
-  const th = 'text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10 whitespace-nowrap';
+  // the line and shadow sit on each cell, since a sticky thead in a collapsed table drops its own border
+  const th = 'text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10 whitespace-nowrap bg-[#F9FAFB] shadow-[inset_0_-1px_0_#E4E7EC,0_4px_6px_-4px_rgba(15,23,42,0.12)]';
   const perOutlet = new Map<string, number>(); for (const o of d.orders) perOutlet.set(o.outletId, (perOutlet.get(o.outletId) ?? 0) + 1);
   return (
     <div className="flex flex-1 min-h-0">
@@ -87,8 +119,21 @@ export default function Orders() {
                   ))}
                 </ul>
                 <table className="hidden md:table w-full min-w-[1080px] border-collapse">
-                  <thead className="sticky top-[var(--top-h,0px)] z-[5] bg-[#F9FAFB] border-b border-[#E4E7EC]">
-                    <tr>{['Order', 'Outlet', 'Temp', 'Weight', 'Volume', 'Window', 'Access', 'Last served', 'Source', 'Placement'].map(h => <th key={h} className={th}>{h}</th>)}</tr>
+                  {/* -1px tucks the header under the toolbar's edge so rows never peek through a sub-pixel gap */}
+                  <thead className="sticky top-[-1px] z-[5]">
+                    <tr>{COLUMNS.map(c => {
+                      const on = !!sort && sort.key === c.key;
+                      return (
+                        <th key={c.label} className={th} aria-sort={on ? (sort!.dir === 1 ? 'ascending' : 'descending') : undefined}>
+                          {c.key ? (
+                            <button onClick={() => toggleSort(c.key!, c.num)} className={`group -mx-1 px-1 h-7 inline-flex items-center gap-1 rounded uppercase tracking-[0.06em] hover:text-slate-800 ${on ? 'text-slate-800' : ''}`}>
+                              {c.label}
+                              {on ? (sort!.dir === 1 ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : <ChevronsUpDown size={12} className="text-slate-300 group-hover:text-slate-400" />}
+                            </button>
+                          ) : c.label}
+                        </th>
+                      );
+                    })}</tr>
                   </thead>
                   <tbody>
                     {rows.map(o => {
