@@ -1,7 +1,5 @@
 # AI tool disclosure
 
-**Team Cipher · Tech-Triathlon 2026 Hackathon · as of 4 October 2026**
-
 The brief asks us to explain *which work was AI-assisted, which was not, and how we used the tools*. This page answers those three questions, names every tool, and says how we checked the result. It is the written record of our AI use; commit trailers are not a complete record, this document is.
 
 ## 1. At a glance
