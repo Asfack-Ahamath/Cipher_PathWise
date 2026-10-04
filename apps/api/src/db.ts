@@ -7,11 +7,11 @@ pg.types.setTypeParser(1082, v => v);                                // date →
 // Managed Postgres (Supabase, Neon) needs TLS: set DATABASE_SSL=true. We drop any sslmode in the URL so
 // the explicit TLS settings below always apply (Supabase's pooler certificate is not in Node's CA store).
 const url = config.databaseSsl ? config.databaseUrl.replace(/([?&])sslmode=[^&]*&?/, '$1').replace(/[?&]$/, '') : config.databaseUrl;
-// A new connection to a remote database costs several round trips (TCP, TLS, auth), so keep idle ones open
-// for minutes rather than seconds, with TCP keep-alive so hosting proxies do not silently drop them.
+// Supabase's session pooler caps the whole project at a few connections (15 on the free plan), shared by every
+// running copy of the API, so hand idle ones back after a minute. TCP keep-alive stops proxies dropping busy ones.
 export const pool = new pg.Pool({
   connectionString: url, max: Number(process.env.DATABASE_POOL_MAX ?? 10),
-  idleTimeoutMillis: Number(process.env.DATABASE_IDLE_MS ?? 600_000), connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: Number(process.env.DATABASE_IDLE_MS ?? 60_000), connectionTimeoutMillis: 10_000,
   keepAlive: true, keepAliveInitialDelayMillis: 10_000,
   ssl: config.databaseSsl ? { rejectUnauthorized: false } : undefined,
 });
