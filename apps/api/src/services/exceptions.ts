@@ -4,7 +4,7 @@ import { dayLabel, minutesOfDay, nowSync } from '../clock.js';
 import { one, q, tx, type Db } from '../db.js';
 import { bad, conflict, notFound } from '../errors.js';
 import { z } from 'zod';
-import { nextOperatingDay } from './network.js';
+import { invalidateNetwork, nextOperatingDay } from './network.js';
 
 export const ResolveBody = z.object({
   decision: z.enum(['send_partial', 'substitute', 'hold', 'swap', 'continue', 'return_to_depot', 'retry_today', 'keep_driver', 'keep_reassignment', 'redeliver', 'credit', 'acknowledge', 'accept', 'remove_line']),
@@ -70,6 +70,7 @@ export async function resolve(id: number, userId: number, body: z.infer<typeof R
           const busy = await one<any>(`SELECT 1 FROM trips WHERE plan_date = $1 AND vehicle_id = $2 AND trip_no = $3 AND status <> 'cancelled'`, [e.d, body.vehicleId, e.trip_no], c);
           if (!nv || nv.status !== 'available' || busy) throw conflict(`${body.vehicleId} is not free for this trip.`);
           await c.query(`UPDATE vehicles SET status = 'in_workshop', status_note = $2 WHERE id = $1`, [e.vehicle_id, d.type ?? 'Fault reported at the dock']);
+          invalidateNetwork();
           await c.query(`UPDATE trips SET vehicle_id = $2, swapped_from = $3, status = 'loading' WHERE id = $1`, [e.trip_id, body.vehicleId, e.vehicle_id]);
           await c.query(`UPDATE trip_orders SET load_status = 'pending' WHERE trip_id = $1 AND moved_at IS NULL AND load_status = 'loaded'`, [e.trip_id]);
           summary = `Swap to ${body.vehicleId}`;

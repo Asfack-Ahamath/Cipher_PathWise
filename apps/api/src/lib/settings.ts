@@ -28,6 +28,9 @@ export const DEFAULT_OPERATIONS: Operations = { cutoffTime: '16:00', offlineAfte
 
 let cache: { rules: PlanningRules; operations: Operations; at: number } | null = null;
 const TTL = 15_000;
+/** Bumped whenever settings change, so caches built from them (the planning network) know to rebuild. */
+let version = 0;
+export const settingsVersion = () => version;
 
 export async function getSettings(db?: Db): Promise<{ rules: PlanningRules; operations: Operations }> {
   if (cache && Date.now() - cache.at < TTL && !db) return cache;
@@ -42,7 +45,7 @@ export async function getSettings(db?: Db): Promise<{ rules: PlanningRules; oper
 export async function saveSettings(key: 'rules' | 'operations', value: unknown, db?: Db) {
   const parsed = key === 'rules' ? RulesSchema.parse(value) : OperationsSchema.parse(value);
   await q(`INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [key, JSON.stringify(parsed)], db);
-  cache = null;
+  cache = null; version++;
   return parsed;
 }
-export const invalidateSettings = () => { cache = null; };
+export const invalidateSettings = () => { cache = null; version++; };

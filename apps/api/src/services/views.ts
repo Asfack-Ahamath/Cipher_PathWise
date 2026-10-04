@@ -6,15 +6,13 @@ import { MS_PER_MINUTE } from '../lib/constants.js';
 import { getSettings } from '../lib/settings.js';
 import { activePlanDate, loadNetwork, ORDER_COLS } from './network.js';
 import { planView } from './plans.js';
-import { liveEta } from './live.js';
+import { liveEtaMany } from './live.js';
 
 /* Read models for the dispatcher's screens. */
 
 export async function overview(date?: string, depot?: string) {
-  const d = date ?? await activePlanDate();
-  const net = await loadNetwork();
-  const { operations } = await getSettings();
-  const [orders, byStatus, trips, exceptions, pub, cal] = await Promise.all([
+  const [d, net, { operations }] = await Promise.all([date ?? activePlanDate(), loadNetwork(), getSettings()]);
+  const [orders, byStatus, trips, exceptions, pub, cal, draft, next, unconfirmed] = await Promise.all([
     q<any>(`SELECT o.temp, ot.brand, o.status, o.m3 FROM orders o JOIN outlets ot ON ot.id = o.outlet_id WHERE (o.delivery_date = $1 OR o.id IN (SELECT order_id FROM deferrals WHERE from_date = $1)) AND o.parent_order_id IS NULL AND o.status <> 'cancelled' AND ($2::text IS NULL OR ot.depot = $2)`, [d, depot ?? null]),
     // whole orders moved to another day; part-deferrals (shortfalls, replacements) are counted separately
     q<any>(`SELECT df.kind, df.reason, count(*)::int AS n, count(*) FILTER (WHERE df.units IS NOT NULL)::int AS partial FROM deferrals df JOIN orders o ON o.id = df.order_id JOIN outlets ot ON ot.id = o.outlet_id WHERE df.from_date = $1 AND ($2::text IS NULL OR ot.depot = $2) GROUP BY df.kind, df.reason`, [d, depot ?? null]),
@@ -22,19 +20,19 @@ export async function overview(date?: string, depot?: string) {
     q<any>(`SELECT e.id, e.type, e.title, e.detail, e.raised_at AS "raisedAt", e.severity, COALESCE(ot.depot, ve.depot) AS depot FROM exceptions e LEFT JOIN trips t ON t.id = e.trip_id LEFT JOIN vehicles ve ON ve.id = t.vehicle_id LEFT JOIN outlets ot ON ot.id = e.outlet_id WHERE e.status = 'open' AND ($1::text IS NULL OR COALESCE(ot.depot, ve.depot) IS NULL OR COALESCE(ot.depot, ve.depot) = $1) ORDER BY e.raised_at DESC`, [depot ?? null]),
     one<any>(`SELECT version, published_at AS "publishedAt" FROM plans WHERE plan_date = $1 AND status = 'published'`, [d]),
     one<any>(`SELECT is_payday AS "isPayday", holiday, festival_ramp AS "festivalRamp", monsoon FROM calendar WHERE date = $1`, [d]),
+    one<any>(`SELECT version FROM plans WHERE plan_date = $1 AND status = 'draft'`, [d]),
+    one<any>(`SELECT to_char(date,'YYYY-MM-DD') AS date, holiday FROM calendar WHERE date > $1 ORDER BY date LIMIT 1`, [d]),
+    one<{ n: number }>(`SELECT count(*)::int AS n FROM orders o JOIN outlets ot ON ot.id = o.outlet_id WHERE o.delivery_date = $1 AND ($4::text IS NULL OR ot.depot = $4) AND o.status IN ('delivered','partial') AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.order_id = o.id)
+      AND EXISTS (SELECT 1 FROM trip_orders tor JOIN stop_events e ON e.trip_id = tor.trip_id AND e.outlet_id = o.outlet_id AND e.type = 'delivered' WHERE tor.order_id = o.id AND e.device_time < $2::timestamptz - make_interval(mins => $3))`,
+    [d, nowSync(), Math.round(operations.receiptConfirmHours * 60), depot ?? null]),
   ]);
-  const draft = await one<any>(`SELECT version FROM plans WHERE plan_date = $1 AND status = 'draft'`, [d]);
   const vehicles = [...net.vehicles.values()].filter(v => !depot || v.depot === depot);
   const tripCount = Object.fromEntries(trips.map(t => [t.status, t.n]));
   const deferred = byStatus.reduce((a, r) => a + r.n - r.partial, 0);
   const partial = byStatus.reduce((a, r) => a + r.partial, 0);
-  const next = await one<any>(`SELECT to_char(date,'YYYY-MM-DD') AS date, holiday FROM calendar WHERE date > $1 ORDER BY date LIMIT 1`, [d]);
   const view = pub ? await planView(d) : null;
   const closest = view ? Object.entries(view.usage).filter(([id]) => !depot || net.vehicles.get(id)!.depot === depot).map(([id, u]: any) => ({ id, depot: net.vehicles.get(id)!.depot, fresh: u.fresh, freshBudget: u.freshBudget, fuelAfter: Math.round((u.fuelUsedL + u.fuelAddL) * 10) / 10, fuelQuota: u.fuelQuotaL })).sort((a, b) => b.fresh / b.freshBudget - a.fresh / a.freshBudget).slice(0, 4) : [];
   const reefers = vehicles.filter(v => v.temp === 'reefer');
-  const unconfirmed = await one<{ n: number }>(`SELECT count(*)::int AS n FROM orders o JOIN outlets ot ON ot.id = o.outlet_id WHERE o.delivery_date = $1 AND ($4::text IS NULL OR ot.depot = $4) AND o.status IN ('delivered','partial') AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.order_id = o.id)
-      AND EXISTS (SELECT 1 FROM trip_orders tor JOIN stop_events e ON e.trip_id = tor.trip_id AND e.outlet_id = o.outlet_id AND e.type = 'delivered' WHERE tor.order_id = o.id AND e.device_time < $2::timestamptz - make_interval(mins => $3))`,
-    [d, nowSync(), Math.round(operations.receiptConfirmHours * 60), depot ?? null]);
   return {
     date: d, dateLabel: dayLabel(d), now: nowSync().toISOString(), calendar: cal, nextDay: next,
     plan: { published: pub, draft: draft ? { version: draft.version } : null },
@@ -64,16 +62,20 @@ export async function overview(date?: string, depot?: string) {
 
 /** Live tracking: every trip of the day with progress, last contact, expected ETAs and a position. */
 export async function tracking(date?: string) {
-  const d = date ?? await activePlanDate();
-  const net = await loadNetwork();
-  const { operations } = await getSettings();
+  const [d, net, { operations }] = await Promise.all([date ?? activePlanDate(), loadNetwork(), getSettings()]);
   const now = nowSync();
   const trips = await q<any>(`SELECT t.id, t.vehicle_id, t.trip_no, t.depart, t.status, to_char(t.plan_date,'YYYY-MM-DD') AS plan_date, t.started_at AS "startedAt", t.closed_at AS "closedAt", p.last_seen AS "lastSeen"
     FROM trips t LEFT JOIN vehicle_presence p ON p.vehicle_id = t.vehicle_id WHERE t.plan_date = $1 AND t.status <> 'cancelled' ORDER BY t.depart, t.vehicle_id`, [d]);
+  // two queries for the whole board instead of four per trip
+  const ids = trips.map(t => t.id);
+  const [etas, delivered] = await Promise.all([
+    liveEtaMany(net, trips, now),
+    q<any>(`SELECT trip_id, outlet_id AS "outletId", device_time AS "deviceTime", conflict, payload->>'outcome' AS outcome FROM stop_events WHERE trip_id = ANY($1::int[]) AND type = 'delivered' ORDER BY device_time`, [ids]),
+  ]);
   const out = [];
   for (const t of trips) {
-    const eta = await liveEta(net, t, now);
-    const ev = await q<any>(`SELECT outlet_id AS "outletId", device_time AS "deviceTime", conflict, payload->>'outcome' AS outcome FROM stop_events WHERE trip_id = $1 AND type = 'delivered' ORDER BY device_time`, [t.id]);
+    const eta = etas.get(t.id)!;
+    const ev = delivered.filter(e => e.trip_id === t.id);
     const lastSeen = t.lastSeen ? new Date(t.lastSeen) : null;
     const offline = t.status === 'in_progress' && (!lastSeen || now.getTime() - lastSeen.getTime() > operations.offlineAfterMin * MS_PER_MINUTE);
     const v = net.vehicles.get(t.vehicle_id)!;
