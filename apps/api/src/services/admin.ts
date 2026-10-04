@@ -2,7 +2,7 @@ import os from 'node:os';
 import { randomInt } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { FORECAST_HORIZON } from '@pathwise/core';
+import { FORECAST_HORIZON, outletPosition } from '@pathwise/core';
 import { audit } from '../audit.js';
 import { localDate, nowSync } from '../clock.js';
 import { forgetUser, hashPassword, PasswordPolicy, type AuthUser } from '../auth.js';
@@ -13,7 +13,7 @@ import { BCRYPT_COST } from '../lib/constants.js';
 import { getSettings, OperationsSchema, RulesSchema, saveSettings } from '../lib/settings.js';
 import { sbCreateUser, sbFindUserByEmail, sbHealth, sbSendRecovery, sbUpdateUser, SupabaseError } from '../lib/supabase.js';
 import { parseCsv } from '../seed/datasets.js';
-import { invalidateConditions } from './network.js';
+import { invalidateConditions, invalidateNetwork } from './network.js';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Administration: people, fleet, outlets, settings, data imports, audit log
@@ -302,7 +302,43 @@ export async function updateVehicle(user: AuthUser, id: string, b: z.infer<typeo
   await q(`UPDATE vehicles SET status = coalesce($2, status), status_note = CASE WHEN $2 = 'available' THEN NULL WHEN $3::text IS NOT NULL THEN $3 ELSE status_note END,
       driver_name = coalesce($4, driver_name), fuel_used_l = coalesce($5, fuel_used_l), fuel_quota_l = coalesce($6, fuel_quota_l) WHERE id = $1`,
     [id, b.status ?? null, b.statusNote ?? null, b.driverName ?? null, b.fuelUsedL ?? null, b.fuelQuotaL ?? null]);
+  invalidateNetwork();
   await audit(pool, user.id, 'vehicle.update', `vehicle:${id}`, b);
+  return (await listVehicles()).find(x => x.id === id);
+}
+
+/** Next free id like VEH061 / OUT121 (other screens and routes validate this shape). */
+async function nextId(table: 'vehicles' | 'outlets', prefix: 'VEH' | 'OUT') {
+  const r = await one<{ n: number | null }>(`SELECT max(substring(id from 4)::int) AS n FROM ${table} WHERE id ~ $1`, [`^${prefix}[0-9]{3}$`]);
+  const n = (r?.n ?? 0) + 1;
+  if (n > 999) throw conflict(`No free ${prefix} ids left. Type an unused one.`);
+  return `${prefix}${String(n).padStart(3, '0')}`;
+}
+export async function nextIds() {
+  return { vehicle: await nextId('vehicles', 'VEH'), outlet: await nextId('outlets', 'OUT') };
+}
+
+export const VehicleCreate = z.object({
+  id: z.string().trim().toUpperCase().regex(/^VEH\d{3}$/, 'Vehicle ids look like VEH061.').optional(),
+  type: z.enum(['truck', 'van']),
+  temp: z.enum(['reefer', 'ambient']),
+  depot: z.enum(DEPOTS),
+  weightCap: z.number().positive().max(40000),
+  volumeCap: z.number().positive().max(200),
+  kmPerL: z.number().positive().max(50),
+  fuelQuotaL: z.number().positive().max(10000),
+  fuelUsedL: z.number().min(0).max(10000).default(0),
+  driverName: z.string().trim().min(2).max(80),
+  status: z.enum(['available', 'in_workshop']).default('available'),
+  statusNote: z.string().trim().max(120).nullable().optional(),
+}).refine(b => b.status !== 'in_workshop' || !!b.statusNote, { message: 'Say why the vehicle is in the workshop.', path: ['statusNote'] });
+export async function createVehicle(user: AuthUser, b: z.infer<typeof VehicleCreate>) {
+  const id = b.id ?? await nextId('vehicles', 'VEH');
+  if (await one(`SELECT 1 FROM vehicles WHERE id = $1`, [id])) throw conflict(`${id} already exists.`);
+  await q(`INSERT INTO vehicles (id, type, temp, depot, weight_cap, volume_cap, km_per_l, fuel_quota_l, fuel_used_l, status, status_note, driver_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [id, b.type, b.temp, b.depot, b.weightCap, b.volumeCap, b.kmPerL, b.fuelQuotaL, b.fuelUsedL, b.status, b.status === 'in_workshop' ? b.statusNote : null, b.driverName]);
+  invalidateNetwork();
+  await audit(pool, user.id, 'vehicle.create', `vehicle:${id}`, { ...b, id });
   return (await listVehicles()).find(x => x.id === id);
 }
 
@@ -332,7 +368,58 @@ export async function updateOutlet(user: AuthUser, id: string, b: z.infer<typeof
   }
   await q(`UPDATE outlets SET name = $2, open_time = $3, close_time = $4, mall_window = $5, dock = $6, parking = $7, van_only = $8, is_active = $9 WHERE id = $1`,
     [id, b.name ?? o.name, open, close, b.mallWindow !== undefined ? b.mallWindow?.replace('-', '–') ?? null : o.mall_window, b.dock ?? o.dock, b.parking ?? o.parking, b.vanOnly ?? (b.parking ? b.parking === 'van_only' : o.van_only), b.isActive ?? o.is_active]);
+  invalidateNetwork();
   await audit(pool, user.id, 'outlet.update', `outlet:${id}`, b);
+  return (await listOutlets()).find(x => x.id === id);
+}
+
+/** Travel times from each depot to each district (the planner needs one for every outlet's depot and district). */
+export async function listTravel() {
+  return q<any>(`SELECT depot, district, out_min AS "outMin", inter_min AS "interMin", out_km AS "outKm", inter_km AS "interKm", road_class AS "roadClass" FROM district_travel ORDER BY depot, district`);
+}
+
+const TravelBody = z.object({
+  outMin: z.number().int().min(5).max(600),
+  interMin: z.number().int().min(1).max(240),
+  outKm: z.number().positive().max(600),
+  interKm: z.number().positive().max(200),
+  roadClass: z.enum(['urban', 'suburban', 'highway', 'hill']),
+});
+export const OutletCreate = z.object({
+  id: z.string().trim().toUpperCase().regex(/^OUT\d{3}$/, 'Outlet ids look like OUT121.').optional(),
+  name: z.string().trim().min(3).max(100),
+  brand: z.enum(['Fresh', 'Style', 'Tech']),
+  district: z.string().trim().min(2).max(40).regex(/^[A-Za-z][A-Za-z .'-]*$/, 'Use letters only, e.g. Ratnapura.'),
+  depot: z.enum(DEPOTS),
+  dock: z.enum(['rear_dock', 'street', 'mall_bay']),
+  parking: z.enum(['normal', 'van_only', 'mall_dock']),
+  open: hhmm, close: hhmm,
+  mallWindow: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d[–-]([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM–HH:MM.').nullable().optional(),
+  vanOnly: z.boolean().optional(),
+  lat: z.number().min(5.8).max(9.9).optional(),
+  lng: z.number().min(79.5).max(81.95).optional(),
+  /** Required only when this depot has no travel times for the district yet. */
+  travel: TravelBody.optional(),
+}).refine(b => b.open < b.close, { message: 'The window must open before it closes.', path: ['close'] })
+  .refine(b => (b.lat === undefined) === (b.lng === undefined), { message: 'Give both latitude and longitude, or neither.', path: ['lng'] });
+export async function createOutlet(user: AuthUser, b: z.infer<typeof OutletCreate>) {
+  const id = b.id ?? await nextId('outlets', 'OUT');
+  if (await one(`SELECT 1 FROM outlets WHERE id = $1`, [id])) throw conflict(`${id} already exists.`);
+  if (!(await one(`SELECT 1 FROM service_allowance WHERE brand = $1 AND dock = $2`, [b.brand, b.dock]))) throw bad(`There is no service allowance for ${b.brand} at a ${b.dock.replace('_', ' ')}.`);
+  // reuse the existing spelling of a district ("colombo" → "Colombo") so travel times and traffic match
+  const known = await one<{ district: string }>(`SELECT district FROM district_travel WHERE lower(district) = lower($1) LIMIT 1`, [b.district]);
+  const district = known?.district ?? b.district.replace(/\b\w/g, c => c.toUpperCase());
+  const travel = await one(`SELECT 1 FROM district_travel WHERE depot = $1 AND district = $2`, [b.depot, district]);
+  if (!travel && !b.travel) throw bad(`${b.depot} has no travel times to ${district} yet. Add the drive time and distance from the depot so the planner can route this outlet.`, [{ field: 'travel', message: 'Travel times needed' }]);
+  const [lat, lng] = b.lat !== undefined ? [b.lat, b.lng!] : outletPosition({ id, district });
+  await tx(async c => {
+    if (!travel && b.travel) await c.query(`INSERT INTO district_travel (depot, district, out_min, inter_min, out_km, inter_km, road_class) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [b.depot, district, b.travel.outMin, b.travel.interMin, b.travel.outKm, b.travel.interKm, b.travel.roadClass]);
+    await c.query(`INSERT INTO outlets (id, name, brand, district, depot, dock, parking, open_time, close_time, mall_window, van_only, lat, lng) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [id, b.name, b.brand, district, b.depot, b.dock, b.parking, b.open, b.close, b.mallWindow?.replace('-', '–') ?? null, b.vanOnly ?? b.parking === 'van_only', lat, lng]);
+    await audit(c, user.id, 'outlet.create', `outlet:${id}`, { ...b, id, district, newTravel: !travel });
+  });
+  invalidateNetwork();
   return (await listOutlets()).find(x => x.id === id);
 }
 
