@@ -19,7 +19,6 @@ are generated into `packages/core/src/datasetExtra.ts` by `node scripts/bundle-d
 
 If a file is missing, the seed falls back to the rows bundled in `packages/core`, so the app always starts.
 
-**Nothing in this folder is committed** (`.gitignore` excludes every CSV and zip under `data/`).
-The competition rules say the datasets must not be shared with any third party: keep the repository
-private and add only the judges. The bundled copies in `packages/core/src/dataset*.ts` are derived from the
-datasets too — remove them before making anything public.
+**Nothing in this folder is committed** (`.gitignore` excludes every CSV, ZIP and spreadsheet under `data/`).
+So that the app always starts, compact tables derived from the reference data are bundled in
+`packages/core/src/dataset.ts` and `datasetExtra.ts`; the seed uses them when a file is missing.

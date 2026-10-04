@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1052" width="1000" height="1052" role="img" aria-labelledby="t d" font-family="Inter, 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif">
+<title id="t">PathWise use cases</title>
+<desc id="d">UML use-case diagram. Five roles and what each can do: Store manager (orders, notices, receipt), Dispatcher (plan, monitor, decide), Loader (load and release), Driver (deliver, works offline), Administrator (people, fleet, rules, data, audit, plus everything a Dispatcher can do). Every role signs in and receives live notifications.</desc>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9" fill="none" stroke="#334155" stroke-width="1.5" stroke-linejoin="round"/></marker></defs>
+<rect x="0.5" y="0.5" width="999" height="1051" rx="14" fill="#FFFFFF" stroke="#E2E8F0"/>
+<rect x="140" y="52" width="700" height="930" rx="14" fill="#F7FCFB" stroke="#0F766E" stroke-width="2"/>
+<text x="158" y="80" font-size="16" font-weight="700" fill="#0F766E">PathWise</text>
+<text x="822" y="80" font-size="12" text-anchor="end" fill="#64748B">system boundary</text>
+<rect x="153" y="106" width="284" height="226" rx="10" fill="#E8F5F3" stroke="#B8DDD7"/>
+<text x="165" y="125" font-size="11.5" font-weight="700" letter-spacing=".06em" fill="#334155">ORDER AND RECEIVE</text>
+<rect x="153" y="348" width="284" height="226" rx="10" fill="#E8F5F3" stroke="#B8DDD7"/>
+<text x="165" y="367" font-size="11.5" font-weight="700" letter-spacing=".06em" fill="#334155">LOAD</text>
+<rect x="153" y="590" width="284" height="274" rx="10" fill="#E8F5F3" stroke="#B8DDD7"/>
+<text x="165" y="609" font-size="11.5" font-weight="700" letter-spacing=".06em" fill="#334155">ADMINISTER</text>
+<rect x="543" y="106" width="284" height="418" rx="10" fill="#E8F5F3" stroke="#B8DDD7"/>
+<text x="555" y="125" font-size="11.5" font-weight="700" letter-spacing=".06em" fill="#334155">PLAN, MONITOR, DECIDE</text>
+<rect x="543" y="540" width="284" height="274" rx="10" fill="#E8F5F3" stroke="#B8DDD7"/>
+<text x="555" y="559" font-size="11.5" font-weight="700" letter-spacing=".06em" fill="#334155">DELIVER</text>
+<rect x="543" y="830" width="284" height="130" rx="10" fill="#E8F5F3" stroke="#B8DDD7"/>
+<text x="555" y="849" font-size="11.5" font-weight="700" letter-spacing=".06em" fill="#334155">EVERYONE</text>
+<line x1="88" y1="213.0" x2="165" y2="156.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="213.0" x2="165" y2="204.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="213.0" x2="165" y2="252.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="213.0" x2="165" y2="300.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="455.0" x2="165" y2="398.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="455.0" x2="165" y2="446.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="455.0" x2="165" y2="494.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="455.0" x2="165" y2="542.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="721.0" x2="165" y2="640.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="721.0" x2="165" y2="688.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="721.0" x2="165" y2="736.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="721.0" x2="165" y2="784.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="88" y1="721.0" x2="165" y2="832.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="309.0" x2="815" y2="156.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="309.0" x2="815" y2="204.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="309.0" x2="815" y2="252.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="309.0" x2="815" y2="300.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="309.0" x2="815" y2="348.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="309.0" x2="815" y2="396.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="309.0" x2="815" y2="444.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="671.0" x2="815" y2="590.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="671.0" x2="815" y2="638.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="671.0" x2="815" y2="686.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="671.0" x2="815" y2="734.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="671.0" x2="815" y2="782.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="889.0" x2="815" y2="880.0" stroke="#64748B" stroke-width="1.2"/>
+<line x1="906" y1="889.0" x2="815" y2="928.0" stroke="#64748B" stroke-width="1.2"/>
+<path d="M555,204.0 H519 V492.0 H555" fill="none" stroke="#334155" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<line x1="555" y1="300.0" x2="519" y2="300.0" stroke="#334155" stroke-width="1.3" stroke-dasharray="5 4"/>
+<line x1="555" y1="396.0" x2="519" y2="396.0" stroke="#334155" stroke-width="1.3" stroke-dasharray="5 4"/>
+<text x="513" y="352.0" font-size="11" font-style="italic" text-anchor="end" fill="#334155">«include»</text>
+<path d="M425,494.0 H461 V446.0 H425" fill="none" stroke="#334155" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="467" y="474.0" font-size="11" font-style="italic" text-anchor="start" fill="#334155">«extend»</text>
+<path d="M555,734.0 H519 V638.0 H555" fill="none" stroke="#334155" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<path d="M519,686.0 H555" fill="none" stroke="#334155" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+<text x="513" y="714.0" font-size="11" font-style="italic" text-anchor="end" fill="#334155">«extend»</text>
+<ellipse cx="295.0" cy="156.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="152.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">S1</tspan> Place, change or cancel an order</text>
+<text x="295.0" y="166.0" font-size="12.5" text-anchor="middle" fill="#042F2E">before the 16:00 cutoff</text>
+<ellipse cx="295.0" cy="204.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="200.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">S2</tspan> See expected arrival</text>
+<text x="295.0" y="214.0" font-size="12.5" text-anchor="middle" fill="#042F2E">and deferral notices</text>
+<ellipse cx="295.0" cy="252.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="248.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">S3</tspan> Confirm receipt line by line,</text>
+<text x="295.0" y="262.0" font-size="12.5" text-anchor="middle" fill="#042F2E">report issues</text>
+<ellipse cx="295.0" cy="300.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="304.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">S4</tspan> Review order and deferral history</text>
+<ellipse cx="295.0" cy="398.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="394.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">L1</tspan> Receive the load list</text>
+<text x="295.0" y="408.0" font-size="12.5" text-anchor="middle" fill="#042F2E">in reverse stop order</text>
+<ellipse cx="295.0" cy="446.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="450.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">L2</tspan> Verify and tick the load</text>
+<ellipse cx="295.0" cy="494.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="498.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">L3</tspan> Flag shortfall, damage or fault</text>
+<ellipse cx="295.0" cy="542.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="546.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">L4</tspan> Release the vehicle to the driver</text>
+<ellipse cx="295.0" cy="640.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="644.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">A1</tspan> Manage people and access</text>
+<ellipse cx="295.0" cy="688.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="692.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">A2</tspan> Manage fleet, outlets, rules</text>
+<ellipse cx="295.0" cy="736.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="740.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">A3</tspan> Import data (Task 2A forecast)</text>
+<ellipse cx="295.0" cy="784.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="295.0" y="788.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">A4</tspan> Review audit log and health</text>
+<ellipse cx="295.0" cy="832.0" rx="130.0" ry="20.0" fill="#F1F5F9" stroke="#64748B" stroke-width="1.6" stroke-dasharray="5 4"/>
+<text x="295.0" y="828.5" font-size="12.5" text-anchor="middle" fill="#334155">Everything a Dispatcher can do</text>
+<text x="295.0" y="842.0" font-size="12.5" text-anchor="middle" fill="#334155">(D1 to D7)</text>
+<ellipse cx="685.0" cy="156.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="160.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">D1</tspan> Review the confirmed queue</text>
+<ellipse cx="685.0" cy="204.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="208.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">D2</tspan> Auto-plan and adjust</text>
+<ellipse cx="685.0" cy="252.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="248.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">D3</tspan> Explain deferrals</text>
+<text x="685.0" y="262.0" font-size="12.5" text-anchor="middle" fill="#042F2E">forced or chosen</text>
+<ellipse cx="685.0" cy="300.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="304.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">D4</tspan> Publish the plan and notify</text>
+<ellipse cx="685.0" cy="348.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="352.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">D5</tspan> Track trips live</text>
+<ellipse cx="685.0" cy="396.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="392.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">D6</tspan> Resolve exceptions,</text>
+<text x="685.0" y="406.0" font-size="12.5" text-anchor="middle" fill="#042F2E">move a stop</text>
+<ellipse cx="685.0" cy="444.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="440.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">D7</tspan> Forecast capacity,</text>
+<text x="685.0" y="454.0" font-size="12.5" text-anchor="middle" fill="#042F2E">peak-day lab</text>
+<ellipse cx="685.0" cy="492.0" rx="130.0" ry="20.0" fill="#F0FDFA" stroke="#0F766E" stroke-width="1.6" stroke-dasharray="5 4"/>
+<text x="685.0" y="496.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">V1</tspan> Validate against every rule</text>
+<ellipse cx="685.0" cy="590.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="586.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">R1</tspan> Receive the route,</text>
+<text x="685.0" y="600.0" font-size="12.5" text-anchor="middle" fill="#042F2E">start the trip</text>
+<ellipse cx="685.0" cy="638.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="642.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">R2</tspan> Record delivery with proof</text>
+<ellipse cx="685.0" cy="686.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="690.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">R3</tspan> Report a problem or delay</text>
+<ellipse cx="685.0" cy="734.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="738.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">R4</tspan> Work offline and sync</text>
+<ellipse cx="685.0" cy="782.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="786.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">R5</tspan> Close the trip</text>
+<ellipse cx="685.0" cy="880.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="884.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">X1</tspan> Sign in</text>
+<ellipse cx="685.0" cy="928.0" rx="130.0" ry="20.0" fill="#FFFFFF" stroke="#0F766E" stroke-width="1.6"/>
+<text x="685.0" y="932.5" font-size="12.5" text-anchor="middle" fill="#042F2E"><tspan font-weight="700" fill="#0F766E">X2</tspan> Receive live notifications</text>
+<g stroke="#2563EB" stroke-width="2" stroke-linecap="round" fill="none"><circle cx="72" cy="193.0" r="9" fill="#DBEAFE"/><line x1="72" y1="202.0" x2="72" y2="225.0"/><line x1="57" y1="210.0" x2="87" y2="210.0"/><line x1="72" y1="225.0" x2="60" y2="243.0"/><line x1="72" y1="225.0" x2="84" y2="243.0"/></g>
+<text x="72" y="261.0" font-size="13" font-weight="700" text-anchor="middle" fill="#0B1B3A">Store manager</text>
+<g stroke="#2563EB" stroke-width="2" stroke-linecap="round" fill="none"><circle cx="72" cy="435.0" r="9" fill="#DBEAFE"/><line x1="72" y1="444.0" x2="72" y2="467.0"/><line x1="57" y1="452.0" x2="87" y2="452.0"/><line x1="72" y1="467.0" x2="60" y2="485.0"/><line x1="72" y1="467.0" x2="84" y2="485.0"/></g>
+<text x="72" y="503.0" font-size="13" font-weight="700" text-anchor="middle" fill="#0B1B3A">Loader</text>
+<g stroke="#2563EB" stroke-width="2" stroke-linecap="round" fill="none"><circle cx="72" cy="701.0" r="9" fill="#DBEAFE"/><line x1="72" y1="710.0" x2="72" y2="733.0"/><line x1="57" y1="718.0" x2="87" y2="718.0"/><line x1="72" y1="733.0" x2="60" y2="751.0"/><line x1="72" y1="733.0" x2="84" y2="751.0"/></g>
+<text x="72" y="769.0" font-size="13" font-weight="700" text-anchor="middle" fill="#0B1B3A">Administrator</text>
+<g stroke="#2563EB" stroke-width="2" stroke-linecap="round" fill="none"><circle cx="922" cy="289.0" r="9" fill="#DBEAFE"/><line x1="922" y1="298.0" x2="922" y2="321.0"/><line x1="907" y1="306.0" x2="937" y2="306.0"/><line x1="922" y1="321.0" x2="910" y2="339.0"/><line x1="922" y1="321.0" x2="934" y2="339.0"/></g>
+<text x="922" y="357.0" font-size="13" font-weight="700" text-anchor="middle" fill="#0B1B3A">Dispatcher</text>
+<g stroke="#2563EB" stroke-width="2" stroke-linecap="round" fill="none"><circle cx="922" cy="651.0" r="9" fill="#DBEAFE"/><line x1="922" y1="660.0" x2="922" y2="683.0"/><line x1="907" y1="668.0" x2="937" y2="668.0"/><line x1="922" y1="683.0" x2="910" y2="701.0"/><line x1="922" y1="683.0" x2="934" y2="701.0"/></g>
+<text x="922" y="719.0" font-size="13" font-weight="700" text-anchor="middle" fill="#0B1B3A">Driver</text>
+<g stroke="#2563EB" stroke-width="2" stroke-linecap="round" fill="none"><circle cx="922" cy="869.0" r="9" fill="#DBEAFE"/><line x1="922" y1="878.0" x2="922" y2="901.0"/><line x1="907" y1="886.0" x2="937" y2="886.0"/><line x1="922" y1="901.0" x2="910" y2="919.0"/><line x1="922" y1="901.0" x2="934" y2="919.0"/></g>
+<text x="922" y="937.0" font-size="13" font-weight="700" text-anchor="middle" fill="#0B1B3A">Any signed-in</text>
+<text x="922" y="952.0" font-size="13" font-weight="700" text-anchor="middle" fill="#0B1B3A">role</text>
+<g font-size="12" fill="#334155"><line x1="140" y1="1018" x2="178" y2="1018" stroke="#64748B" stroke-width="1.2"/><text x="186" y="1022">association (actor uses it)</text><path d="M390,1018 L428,1018" stroke="#334155" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#ah)"/><text x="436" y="1022">include / extend (arrow points to the base use case)</text><ellipse cx="728" cy="1018" rx="16" ry="8" fill="#F1F5F9" stroke="#64748B" stroke-dasharray="4 3"/><text x="752" y="1022">included or inherited</text></g>
+</svg>
