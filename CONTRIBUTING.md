@@ -12,7 +12,7 @@ Be respectful and professional in all interactions. We're building this together
 
 - Node.js 20 or newer (https://nodejs.org)
 - Git
-- PostgreSQL 14+ (optional if using Docker or local PostgreSQL)
+- Docker (optional): `docker compose up --build` runs the whole stack, including PostgreSQL 16
 
 ### Setup
 
@@ -29,9 +29,9 @@ Be respectful and professional in all interactions. We're building this together
 
 3. **Run locally**
    ```bash
-   npm run local        # With Docker (recommended)
+   npm run local        # Node.js only: embedded PostgreSQL, serves on http://localhost:8080
    # OR
-   npm run dev          # With your own PostgreSQL
+   npm run dev          # With your own PostgreSQL or Supabase (copy .env.example to .env first)
    ```
 
 ## Development Workflow
@@ -84,7 +84,7 @@ npm run build         # Build the project
 ### Web App (`apps/web`)
 
 - React 19 + Vite + Tailwind CSS
-- Role-based routes: dispatcher (`/d`), loader (`/l`), driver (`/r`), store (`/s`)
+- Role-based routes: administrator (`/a`), dispatcher (`/d`), loader (`/l`), driver (`/r`), store (`/s`)
 - Service worker for offline support
 
 ### Database

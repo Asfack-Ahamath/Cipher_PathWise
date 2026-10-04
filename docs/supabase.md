@@ -101,8 +101,11 @@ Check it worked:
 
 ## 7. Deploy the app
 
-Any Docker host works. With Render: push to a **private** GitHub repo → Render → *New → Blueprint* → pick the
-repo → paste the values `render.yaml` asks for → *Apply*. Health check: `GET /api/health`.
+Any Docker host works; the same image runs everywhere and only the environment variables change. Health check: `GET /api/health`.
+
+- **Railway** (the live demo): create a service from the GitHub repository (it builds the `Dockerfile`), add the variables from section 5, and expose port 8080.
+- **Render:** push to GitHub → Render → *New → Blueprint* → pick the repo → paste the values `render.yaml` asks for → *Apply*.
+- **Anywhere else** (Fly.io, a VM): build the `Dockerfile`, set the same variables and expose port 8080.
 
 ## Useful commands
 
