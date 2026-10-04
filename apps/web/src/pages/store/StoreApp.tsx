@@ -2,21 +2,18 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home, ShoppingCart, CalendarClock, ClipboardCheck, History, Truck, CheckCircle2, Clock, WifiOff,
-  Snowflake, Package, Minus, Plus, AlertTriangle, PartyPopper, Wallet, CloudRain, Camera, PenLine,
-  Lock, Timer, Construction, Pencil, Ban, X, ImagePlus, TrendingUp, CalendarDays, ShieldAlert,
+  Snowflake, Package, Minus, Plus, AlertTriangle, CloudRain, Camera, PenLine,
+  Lock, Pencil, Ban, X, TrendingUp, CalendarDays, ShieldAlert,
   AlertOctagon, Users, ChevronRight, Info, Phone, FileText
 } from 'lucide-react';
 import { FieldHeader, BigButton } from '../../components/FieldShell';
-import { Callout, Segmented, Modal, Field, inputCls, Empty, Button, cx } from '../../components/ds';
+import { Segmented, Modal, Field, inputCls, Empty, Button, cx, Pill } from '../../components/ds';
 import { AuthImage, compressImage, ErrorState, Loading, Status, useAct, useApi, useToast, fmt } from '../../components/common';
 import { OutletBadges, TempTag } from '../../components/tags';
-import StatusChip, { STATUS, OFFLINE_GREY } from '../../components/StatusChip';
+import { STATUS } from '../../components/StatusChip';
 import { del, patch, post } from '../../lib/api';
 import { useLiveUpdates } from '../../lib/live';
 import { hhmm, useNow } from '../../lib/clock';
-
-/** Most units one order line can hold (the API enforces the same limit). */
-const MAX_UNITS = 500;
 
 const TABS = [
   { to: '/s', label: 'Today', icon: Home, end: true },
@@ -229,8 +226,7 @@ function EtaCard({
     <div className="rounded-2xl p-4 sm:p-5" style={{ background: isOffline ? '#F3F4F6' : delivered ? '#F0FDF4' : '#F0FDFA', border: `1px solid ${isOffline ? '#D1D5DB' : delivered ? '#BBF7D0' : '#99F6E4'}` }}>
       <div className="flex items-center justify-between mb-2">
         <div className="text-[14px] font-bold text-slate-900">Today · {dateLabel}</div>
-        <StatusChip
-          size="sm"
+        <Pill
           label={delivered ? 'Delivered' : ['in_progress', 'completed'].includes(d.tripStatus) ? 'Out for delivery' : 'Planned'}
           color={delivered ? STATUS.delivered.color : ['in_progress', 'completed'].includes(d.tripStatus) ? STATUS.outForDel.color : STATUS.planned.color}
           bg={delivered ? STATUS.delivered.bg : ['in_progress', 'completed'].includes(d.tripStatus) ? STATUS.outForDel.bg : STATUS.planned.bg}
@@ -247,7 +243,7 @@ function EtaCard({
       ) : isOffline ? (
         <>
           <div className="text-[26px] font-bold tabular text-slate-800">Estimated {d.eta}</div>
-          <div className="text-[13px] text-slate-600 flex items-center gap-1.5 mt-0.5"><WifiOff size={13} style={{ color: OFFLINE_GREY }} />Last update {d.lastUpdate ? hhmm(d.lastUpdate) : '05:40'} · low coverage area</div>
+          <div className="text-[13px] text-slate-600 flex items-center gap-1.5 mt-0.5"><WifiOff size={13} style={{ color: STATUS.offline.color }} />Last update {d.lastUpdate ? hhmm(d.lastUpdate) : '05:40'} · low coverage area</div>
           <div className="text-[12px] text-slate-500 mt-1">The driver is in a low-coverage stretch of road. This time is an estimate from the plan; it updates as soon as the phone has signal.</div>
         </>
       ) : (
@@ -527,7 +523,7 @@ function Order({ o }: { o: any }) {
             <div key={res.id || idx} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-left bg-white shadow-2xs">
               <TempTag temp={idx === 0 && ambUnits > 0 ? 'ambient' : 'chilled'} />
               <span className="flex-1 font-mono text-[13px] text-slate-700 font-semibold">{res.id} · {res.units} units</span>
-              <StatusChip size="sm" label={res.afterCutoff ? 'Queued next run' : 'Unconfirmed'} color={res.afterCutoff ? STATUS.deferred.color : STATUS.unconfirmed.color} bg={res.afterCutoff ? STATUS.deferred.bg : STATUS.unconfirmed.bg} />
+              <Pill label={res.afterCutoff ? 'Queued next run' : 'Unconfirmed'} color={res.afterCutoff ? STATUS.deferred.color : STATUS.unconfirmed.color} bg={res.afterCutoff ? STATUS.deferred.bg : STATUS.unconfirmed.bg} />
             </div>
           ))}
         </div>
