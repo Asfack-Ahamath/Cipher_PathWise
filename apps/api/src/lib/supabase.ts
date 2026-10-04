@@ -87,10 +87,9 @@ export async function sbDownload(path: string, bucket = config.supabase.bucket):
   return Buffer.from(await res.arrayBuffer());
 }
 export async function sbHealth(): Promise<{ auth: boolean; storage: boolean }> {
-  const out = { auth: false, storage: false };
-  try { await call('/auth/v1/health', { key: 'anon' }); out.auth = true; } catch { /* reported */ }
-  try { await call(`/storage/v1/bucket/${config.supabase.bucket}`); out.storage = true; } catch { /* reported */ }
-  return out;
+  const ok = (p: Promise<unknown>) => p.then(() => true, () => false);
+  const [auth, storage] = await Promise.all([ok(call('/auth/v1/health', { key: 'anon' })), ok(call(`/storage/v1/bucket/${config.supabase.bucket}`))]);
+  return { auth, storage };
 }
 
 /** Password recovery: the person followed the emailed link; Supabase gave the browser a recovery access token. */

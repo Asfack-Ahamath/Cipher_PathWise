@@ -21,25 +21,23 @@ export async function touchPresence(vehicleId: string | null) {
 /** The driver's run for the day, with expected arrival times. The phone caches this for offline use. */
 export async function myRun(user: AuthUser) {
   if (!user.vehicleId) throw bad('No vehicle is assigned to your account. Ask the dispatcher.');
-  await touchPresence(user.vehicleId);
-  const date = await activePlanDate();
-  const net = await loadNetwork();
+  const [, date, net, v] = await Promise.all([
+    touchPresence(user.vehicleId), activePlanDate(), loadNetwork(),
+    one<any>(`SELECT id, type, temp, depot, driver_name AS "driverName", weight_cap AS "weightCap", volume_cap AS "volumeCap" FROM vehicles WHERE id = $1`, [user.vehicleId]),
+  ]);
   const now = nowSync();
   // trips of this vehicle, plus trips it took over from a faulty vehicle
   const rows = await q<any>(`SELECT id, vehicle_id, trip_no, depart, status, to_char(plan_date,'YYYY-MM-DD') AS plan_date FROM trips WHERE plan_date = $1 AND vehicle_id = $2 AND status <> 'cancelled' ORDER BY trip_no`, [date, user.vehicleId]);
-  const trips = [];
-  for (const r of rows) {
-    const eta = await liveEta(net, r, now);
-    const d = await tripDetail(r.id);
+  const trips = await Promise.all(rows.map(async r => {
+    const [eta, d] = await Promise.all([liveEta(net, r, now), tripDetail(r.id)]);
     // a stop was moved on or off this trip since the driver last acknowledged: show a banner until they tap "Got it"
     const change = await one<any>(`SELECT max(m.moved_at) AS at,
         json_agg(json_build_object('outletId', m.outlet_id, 'direction', CASE WHEN m.from_trip_id = $1 THEN 'off' ELSE 'on' END, 'reason', m.reason) ORDER BY m.id) AS moves
       FROM stop_moves m WHERE (m.from_trip_id = $1 OR m.to_trip_id = $1)
         AND m.moved_at > coalesce((SELECT max(e.device_time) FROM stop_events e WHERE e.trip_id = $1 AND e.type = 'route_ack'), '-infinity')`, [r.id]);
     const moves = change?.moves ? change.moves.filter((m: any, i: number, a: any[]) => a.findIndex(x => x.outletId === m.outletId && x.direction === m.direction) === i) : [];
-    trips.push({ ...d, routeChange: change?.at ? { at: change.at, moves } : null, stops: d.stops.map((s: any) => { const e = eta.stops.find(x => x.outletId === s.outletId); return { ...s, expected: e?.expectedArriveHHMM ?? s.arrive, late: e?.late ?? s.late, lateRisk: e?.lateRisk ?? s.lateRisk, openAt: e ? toHHMM(e.openAt) : s.outlet.open, closeAt: e?.closeHHMM ?? s.outlet.close }; }), hold: eta.hold });
-  }
-  const v = await one<any>(`SELECT id, type, temp, depot, driver_name AS "driverName", weight_cap AS "weightCap", volume_cap AS "volumeCap" FROM vehicles WHERE id = $1`, [user.vehicleId]);
+    return { ...d, routeChange: change?.at ? { at: change.at, moves } : null, stops: d.stops.map((s: any) => { const e = eta.stops.find(x => x.outletId === s.outletId); return { ...s, expected: e?.expectedArriveHHMM ?? s.arrive, late: e?.late ?? s.late, lateRisk: e?.lateRisk ?? s.lateRisk, openAt: e ? toHHMM(e.openAt) : s.outlet.open, closeAt: e?.closeHHMM ?? s.outlet.close }; }), hold: eta.hold };
+  }));
   return { date, vehicle: v, trips, fetchedAt: now.toISOString() };
 }
 

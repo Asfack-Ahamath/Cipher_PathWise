@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
   adminOverview, AnnouncementBody, AuditQuery, auditLog, BulkBody, bulkUsers, createAnnouncement, deleteAnnouncement, listAnnouncements, clearForecastImport, createUser, dataStatus, importForecast, listOutlets, listUsers, listVehicles, OutletUpdate, PinBody,
   readSettings, ResetBody, resetPassword, resetPin, signOutUser, systemHealth, unlockUser, updateOutlet, updateUser, UserCreate, UserQuery, UserUpdate,
-  updateVehicle, VehicleUpdate, writeSettings,
+  updateVehicle, VehicleUpdate, writeSettings, createVehicle, VehicleCreate, createOutlet, OutletCreate, listTravel, nextIds,
 } from '../services/admin.js';
 import { guard, IdParam, parse, params } from './util.js';
 
@@ -20,8 +20,12 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/api/admin/users/:id/sign-out', A, async req => signOutUser(req.user, parse(IdParam, req.params).id));
   /* fleet and outlets */
   app.get('/api/admin/vehicles', A, async () => listVehicles());
+  app.post('/api/admin/vehicles', A, async req => createVehicle(req.user, parse(VehicleCreate, req.body)));
   app.patch('/api/admin/vehicles/:id', A, async req => updateVehicle(req.user, params(req).id, parse(VehicleUpdate, req.body)));
   app.get('/api/admin/outlets', A, async () => listOutlets());
+  app.post('/api/admin/outlets', A, async req => createOutlet(req.user, parse(OutletCreate, req.body)));
+  app.get('/api/admin/travel', A, async () => listTravel());
+  app.get('/api/admin/next-ids', A, async () => nextIds());
   app.patch('/api/admin/outlets/:id', A, async req => updateOutlet(req.user, params(req).id, parse(OutletUpdate, req.body)));
   /* settings */
   app.get('/api/admin/settings', A, async () => readSettings());

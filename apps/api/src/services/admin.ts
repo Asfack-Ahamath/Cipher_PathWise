@@ -2,7 +2,7 @@ import os from 'node:os';
 import { randomInt } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { FORECAST_HORIZON } from '@pathwise/core';
+import { FORECAST_HORIZON, outletPosition } from '@pathwise/core';
 import { audit } from '../audit.js';
 import { localDate, nowSync } from '../clock.js';
 import { forgetUser, hashPassword, PasswordPolicy, type AuthUser } from '../auth.js';
@@ -13,7 +13,7 @@ import { BCRYPT_COST } from '../lib/constants.js';
 import { getSettings, OperationsSchema, RulesSchema, saveSettings } from '../lib/settings.js';
 import { sbCreateUser, sbFindUserByEmail, sbHealth, sbSendRecovery, sbUpdateUser, SupabaseError } from '../lib/supabase.js';
 import { parseCsv } from '../seed/datasets.js';
-import { invalidateConditions } from './network.js';
+import { invalidateConditions, invalidateNetwork } from './network.js';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Administration: people, fleet, outlets, settings, data imports, audit log
@@ -302,7 +302,43 @@ export async function updateVehicle(user: AuthUser, id: string, b: z.infer<typeo
   await q(`UPDATE vehicles SET status = coalesce($2, status), status_note = CASE WHEN $2 = 'available' THEN NULL WHEN $3::text IS NOT NULL THEN $3 ELSE status_note END,
       driver_name = coalesce($4, driver_name), fuel_used_l = coalesce($5, fuel_used_l), fuel_quota_l = coalesce($6, fuel_quota_l) WHERE id = $1`,
     [id, b.status ?? null, b.statusNote ?? null, b.driverName ?? null, b.fuelUsedL ?? null, b.fuelQuotaL ?? null]);
+  invalidateNetwork();
   await audit(pool, user.id, 'vehicle.update', `vehicle:${id}`, b);
+  return (await listVehicles()).find(x => x.id === id);
+}
+
+/** Next free id like VEH061 / OUT121 (other screens and routes validate this shape). */
+async function nextId(table: 'vehicles' | 'outlets', prefix: 'VEH' | 'OUT') {
+  const r = await one<{ n: number | null }>(`SELECT max(substring(id from 4)::int) AS n FROM ${table} WHERE id ~ $1`, [`^${prefix}[0-9]{3}$`]);
+  const n = (r?.n ?? 0) + 1;
+  if (n > 999) throw conflict(`No free ${prefix} ids left. Type an unused one.`);
+  return `${prefix}${String(n).padStart(3, '0')}`;
+}
+export async function nextIds() {
+  return { vehicle: await nextId('vehicles', 'VEH'), outlet: await nextId('outlets', 'OUT') };
+}
+
+export const VehicleCreate = z.object({
+  id: z.string().trim().toUpperCase().regex(/^VEH\d{3}$/, 'Vehicle ids look like VEH061.').optional(),
+  type: z.enum(['truck', 'van']),
+  temp: z.enum(['reefer', 'ambient']),
+  depot: z.enum(DEPOTS),
+  weightCap: z.number().positive().max(40000),
+  volumeCap: z.number().positive().max(200),
+  kmPerL: z.number().positive().max(50),
+  fuelQuotaL: z.number().positive().max(10000),
+  fuelUsedL: z.number().min(0).max(10000).default(0),
+  driverName: z.string().trim().min(2).max(80),
+  status: z.enum(['available', 'in_workshop']).default('available'),
+  statusNote: z.string().trim().max(120).nullable().optional(),
+}).refine(b => b.status !== 'in_workshop' || !!b.statusNote, { message: 'Say why the vehicle is in the workshop.', path: ['statusNote'] });
+export async function createVehicle(user: AuthUser, b: z.infer<typeof VehicleCreate>) {
+  const id = b.id ?? await nextId('vehicles', 'VEH');
+  if (await one(`SELECT 1 FROM vehicles WHERE id = $1`, [id])) throw conflict(`${id} already exists.`);
+  await q(`INSERT INTO vehicles (id, type, temp, depot, weight_cap, volume_cap, km_per_l, fuel_quota_l, fuel_used_l, status, status_note, driver_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [id, b.type, b.temp, b.depot, b.weightCap, b.volumeCap, b.kmPerL, b.fuelQuotaL, b.fuelUsedL, b.status, b.status === 'in_workshop' ? b.statusNote : null, b.driverName]);
+  invalidateNetwork();
+  await audit(pool, user.id, 'vehicle.create', `vehicle:${id}`, { ...b, id });
   return (await listVehicles()).find(x => x.id === id);
 }
 
@@ -332,7 +368,58 @@ export async function updateOutlet(user: AuthUser, id: string, b: z.infer<typeof
   }
   await q(`UPDATE outlets SET name = $2, open_time = $3, close_time = $4, mall_window = $5, dock = $6, parking = $7, van_only = $8, is_active = $9 WHERE id = $1`,
     [id, b.name ?? o.name, open, close, b.mallWindow !== undefined ? b.mallWindow?.replace('-', '–') ?? null : o.mall_window, b.dock ?? o.dock, b.parking ?? o.parking, b.vanOnly ?? (b.parking ? b.parking === 'van_only' : o.van_only), b.isActive ?? o.is_active]);
+  invalidateNetwork();
   await audit(pool, user.id, 'outlet.update', `outlet:${id}`, b);
+  return (await listOutlets()).find(x => x.id === id);
+}
+
+/** Travel times from each depot to each district (the planner needs one for every outlet's depot and district). */
+export async function listTravel() {
+  return q<any>(`SELECT depot, district, out_min AS "outMin", inter_min AS "interMin", out_km AS "outKm", inter_km AS "interKm", road_class AS "roadClass" FROM district_travel ORDER BY depot, district`);
+}
+
+const TravelBody = z.object({
+  outMin: z.number().int().min(5).max(600),
+  interMin: z.number().int().min(1).max(240),
+  outKm: z.number().positive().max(600),
+  interKm: z.number().positive().max(200),
+  roadClass: z.enum(['urban', 'suburban', 'highway', 'hill']),
+});
+export const OutletCreate = z.object({
+  id: z.string().trim().toUpperCase().regex(/^OUT\d{3}$/, 'Outlet ids look like OUT121.').optional(),
+  name: z.string().trim().min(3).max(100),
+  brand: z.enum(['Fresh', 'Style', 'Tech']),
+  district: z.string().trim().min(2).max(40).regex(/^[A-Za-z][A-Za-z .'-]*$/, 'Use letters only, e.g. Ratnapura.'),
+  depot: z.enum(DEPOTS),
+  dock: z.enum(['rear_dock', 'street', 'mall_bay']),
+  parking: z.enum(['normal', 'van_only', 'mall_dock']),
+  open: hhmm, close: hhmm,
+  mallWindow: z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d[–-]([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM–HH:MM.').nullable().optional(),
+  vanOnly: z.boolean().optional(),
+  lat: z.number().min(5.8).max(9.9).optional(),
+  lng: z.number().min(79.5).max(81.95).optional(),
+  /** Required only when this depot has no travel times for the district yet. */
+  travel: TravelBody.optional(),
+}).refine(b => b.open < b.close, { message: 'The window must open before it closes.', path: ['close'] })
+  .refine(b => (b.lat === undefined) === (b.lng === undefined), { message: 'Give both latitude and longitude, or neither.', path: ['lng'] });
+export async function createOutlet(user: AuthUser, b: z.infer<typeof OutletCreate>) {
+  const id = b.id ?? await nextId('outlets', 'OUT');
+  if (await one(`SELECT 1 FROM outlets WHERE id = $1`, [id])) throw conflict(`${id} already exists.`);
+  if (!(await one(`SELECT 1 FROM service_allowance WHERE brand = $1 AND dock = $2`, [b.brand, b.dock]))) throw bad(`There is no service allowance for ${b.brand} at a ${b.dock.replace('_', ' ')}.`);
+  // reuse the existing spelling of a district ("colombo" → "Colombo") so travel times and traffic match
+  const known = await one<{ district: string }>(`SELECT district FROM district_travel WHERE lower(district) = lower($1) LIMIT 1`, [b.district]);
+  const district = known?.district ?? b.district.replace(/\b\w/g, c => c.toUpperCase());
+  const travel = await one(`SELECT 1 FROM district_travel WHERE depot = $1 AND district = $2`, [b.depot, district]);
+  if (!travel && !b.travel) throw bad(`${b.depot} has no travel times to ${district} yet. Add the drive time and distance from the depot so the planner can route this outlet.`, [{ field: 'travel', message: 'Travel times needed' }]);
+  const [lat, lng] = b.lat !== undefined ? [b.lat, b.lng!] : outletPosition({ id, district });
+  await tx(async c => {
+    if (!travel && b.travel) await c.query(`INSERT INTO district_travel (depot, district, out_min, inter_min, out_km, inter_km, road_class) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [b.depot, district, b.travel.outMin, b.travel.interMin, b.travel.outKm, b.travel.interKm, b.travel.roadClass]);
+    await c.query(`INSERT INTO outlets (id, name, brand, district, depot, dock, parking, open_time, close_time, mall_window, van_only, lat, lng) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [id, b.name, b.brand, district, b.depot, b.dock, b.parking, b.open, b.close, b.mallWindow?.replace('-', '–') ?? null, b.vanOnly ?? b.parking === 'van_only', lat, lng]);
+    await audit(c, user.id, 'outlet.create', `outlet:${id}`, { ...b, id, district, newTravel: !travel });
+  });
+  invalidateNetwork();
   return (await listOutlets()).find(x => x.id === id);
 }
 
@@ -366,25 +453,27 @@ export async function auditLog(f: z.infer<typeof AuditQuery>) {
   if (f.to) add(`a.at <= ?`, f.to);
   if (f.before) add(`a.id < ?`, f.before);
   p.push(f.limit + 1);
-  const rows = await q<any>(`SELECT a.id, a.at, a.action, a.entity, a.data, a.user_id AS "userId", u.name AS "userName", u.role AS "userRole"
-    FROM audit_log a LEFT JOIN users u ON u.id = a.user_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY a.id DESC LIMIT $${p.length}`, p);
+  const [rows, actions] = await Promise.all([q<any>(`SELECT a.id, a.at, a.action, a.entity, a.data, a.user_id AS "userId", u.name AS "userName", u.role AS "userRole"
+    FROM audit_log a LEFT JOIN users u ON u.id = a.user_id ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY a.id DESC LIMIT $${p.length}`, p),
+    q<{ prefix: string }>(`SELECT DISTINCT split_part(action, '.', 1) AS prefix FROM audit_log ORDER BY 1`)]);
   const more = rows.length > f.limit;
   const items = rows.slice(0, f.limit);
-  const actions = await q<{ prefix: string }>(`SELECT DISTINCT split_part(action, '.', 1) AS prefix FROM audit_log ORDER BY 1`);
   return { items, nextBefore: more ? items[items.length - 1].id : null, actionPrefixes: actions.map(a => a.prefix) };
 }
 
 /* ── data management ── */
 export async function dataStatus() {
-  const count = async (t: string) => (await one<{ n: number }>(`SELECT count(*)::int AS n FROM ${t}`))!.n;
   const tables = ['outlets', 'vehicles', 'district_travel', 'service_allowance', 'calendar', 'traffic_speed', 'road_conditions', 'demand_weekly', 'users', 'orders', 'plans', 'trips', 'stop_events', 'pods', 'receipts', 'exceptions', 'deferrals', 'notifications', 'attachments', 'audit_log'];
-  const counts: Record<string, number> = {};
-  for (const t of tables) counts[t] = await count(t);
-  const cal = await one<any>(`SELECT to_char(min(date),'YYYY-MM-DD') AS "from", to_char(max(date),'YYYY-MM-DD') AS "to" FROM calendar`);
-  const roads = await one<any>(`SELECT to_char(min(date),'YYYY-MM-DD') AS "from", to_char(max(date),'YYYY-MM-DD') AS "to" FROM road_conditions`);
-  const demand = await q<any>(`SELECT source, count(*)::int AS rows, min(iso_year * 100 + iso_week) AS "fromWeek", max(iso_year * 100 + iso_week) AS "toWeek", max(imported_at) AS "importedAt" FROM demand_weekly GROUP BY source ORDER BY source`);
-  const files = await one<any>(`SELECT count(*)::int AS n, coalesce(sum(bytes),0)::bigint AS bytes, count(*) FILTER (WHERE storage = 'supabase')::int AS supabase FROM attachments`);
-  const orders = await one<any>(`SELECT to_char(min(delivery_date),'YYYY-MM-DD') AS "from", to_char(max(delivery_date),'YYYY-MM-DD') AS "to" FROM orders`);
+  // every count in one statement, and the other reads side by side: one wait for the database instead of ~20
+  const [countRow, cal, roads, demand, files, orders] = await Promise.all([
+    one<Record<string, number>>(`SELECT ${tables.map(t => `(SELECT count(*)::int FROM ${t}) AS "${t}"`).join(', ')}`),
+    one<any>(`SELECT to_char(min(date),'YYYY-MM-DD') AS "from", to_char(max(date),'YYYY-MM-DD') AS "to" FROM calendar`),
+    one<any>(`SELECT to_char(min(date),'YYYY-MM-DD') AS "from", to_char(max(date),'YYYY-MM-DD') AS "to" FROM road_conditions`),
+    q<any>(`SELECT source, count(*)::int AS rows, min(iso_year * 100 + iso_week) AS "fromWeek", max(iso_year * 100 + iso_week) AS "toWeek", max(imported_at) AS "importedAt" FROM demand_weekly GROUP BY source ORDER BY source`),
+    one<any>(`SELECT count(*)::int AS n, coalesce(sum(bytes),0)::bigint AS bytes, count(*) FILTER (WHERE storage = 'supabase')::int AS supabase FROM attachments`),
+    one<any>(`SELECT to_char(min(delivery_date),'YYYY-MM-DD') AS "from", to_char(max(delivery_date),'YYYY-MM-DD') AS "to" FROM orders`),
+  ]);
+  const counts: Record<string, number> = { ...countRow! };
   return { counts, calendar: cal, roadConditions: roads, demand, attachments: { count: files.n, bytes: Number(files.bytes), inSupabase: files.supabase }, orders, dataDir: config.dataDir, demoMode: config.demoMode };
 }
 
@@ -431,14 +520,16 @@ export async function systemHealth() {
   const t0 = Date.now();
   const db = await one<any>(`SELECT version() AS version, current_database() AS name, now() AS now`);
   const dbMs = Date.now() - t0;
-  const migrations = await q<any>(`SELECT name, applied_at AS "appliedAt" FROM schema_migrations ORDER BY name`);
-  const rls = await q<any>(`SELECT c.relname AS table, c.relrowsecurity AS rls FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1`);
-  // storage: database size and the biggest tables (row counts are the planner's estimates)
-  const dbSize = await one<{ bytes: string }>(`SELECT pg_database_size(current_database())::text AS bytes`);
-  const tables = await q<{ name: string; rows: number; bytes: string }>(`SELECT c.relname AS name, greatest(c.reltuples, 0)::bigint::int AS rows, pg_total_relation_size(c.oid)::text AS bytes
-    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8`);
+  const [migrations, rls, dbSize, tables, supabase] = await Promise.all([
+    q<any>(`SELECT name, applied_at AS "appliedAt" FROM schema_migrations ORDER BY name`),
+    q<any>(`SELECT c.relname AS table, c.relrowsecurity AS rls FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1`),
+    // storage: database size and the biggest tables (row counts are the planner's estimates)
+    one<{ bytes: string }>(`SELECT pg_database_size(current_database())::text AS bytes`),
+    q<{ name: string; rows: number; bytes: string }>(`SELECT c.relname AS name, greatest(c.reltuples, 0)::bigint::int AS rows, pg_total_relation_size(c.oid)::text AS bytes
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8`),
+    config.authProvider === 'supabase' || config.storageProvider === 'supabase' ? sbHealth() : Promise.resolve(null),
+  ]);
   const mem = process.memoryUsage();
-  const supabase = config.authProvider === 'supabase' || config.storageProvider === 'supabase' ? await sbHealth() : null;
   return {
     status: 'ok', uptimeSec: Math.round((Date.now() - started) / 1000), node: process.version, env: config.env,
     database: { ok: true, latencyMs: dbMs, name: db.name, version: String(db.version).split(' ').slice(0, 2).join(' '), ssl: config.databaseSsl, pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount } },

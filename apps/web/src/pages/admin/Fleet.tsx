@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Download, Search, Truck, Wrench } from 'lucide-react';
+import { Download, Plus, Search, Truck, Wrench } from 'lucide-react';
 import { Button, Card, Empty, Field, Modal, cx, inputCls, thCls } from '../../components/ds';
 import { Select } from '../../components/Select';
 import { ErrorState, Loading, fmt, useAct, useApi } from '../../components/common';
-import { patch } from '../../lib/api';
+import { patch, post } from '../../lib/api';
 import { downloadCsv, stamp } from '../../lib/csv';
 import { AdminPage, FilterBar } from './AdminApp';
 
@@ -13,14 +13,15 @@ export default function Fleet() {
   const [text, setText] = useState('');
   const [status, setStatus] = useState('all');
   const [edit, setEdit] = useState<any | null>(null);
+  const [adding, setAdding] = useState(false);
   const rows = useMemo(() => (q.data ?? []).filter(v => (depot === 'all' || v.depot === depot) && (status === 'all' || v.status === status) && (!text || `${v.id} ${v.driverName} ${v.type} ${v.temp}`.toLowerCase().includes(text.toLowerCase()))), [q.data, depot, status, text]);
   if (q.isLoading) return <Loading />;
   if (q.error) return <ErrorState error={q.error} retry={q.refetch} />;
   const workshop = (q.data ?? []).filter(v => v.status === 'in_workshop').length;
   return (
-    <AdminPage title="Fleet" subtitle={`${q.data?.length} vehicles · ${workshop} in the workshop. Capacities come from vehicles.csv; the planner never uses a vehicle marked in the workshop.`}
-      actions={<Button icon={<Download size={15} />} disabled={!rows.length} onClick={() => downloadCsv(`pathwise-fleet-${stamp()}.csv`, ['Vehicle', 'Depot', 'Type', 'Temperature', 'Weight cap (kg)', 'Volume cap (m3)', 'Fuel used (L)', 'Fuel quota (L)', 'Driver', 'Status', 'Note'],
-        rows.map(v => [v.id, v.depot, v.type, v.temp, v.weightCap, v.volumeCap, v.fuelUsedL, v.fuelQuotaL, v.driverName, v.status === 'available' ? 'Available' : 'In the workshop', v.statusNote]))}>Export CSV</Button>}>
+    <AdminPage title="Fleet" subtitle={`${q.data?.length} vehicles · ${workshop} in the workshop. New vehicles join the next Auto-plan; the planner never uses a vehicle marked in the workshop.`}
+      actions={<><Button variant="primary" icon={<Plus size={15} />} onClick={() => setAdding(true)}>Add vehicle</Button><Button icon={<Download size={15} />} disabled={!rows.length} onClick={() => downloadCsv(`pathwise-fleet-${stamp()}.csv`, ['Vehicle', 'Depot', 'Type', 'Temperature', 'Weight cap (kg)', 'Volume cap (m3)', 'Fuel used (L)', 'Fuel quota (L)', 'Driver', 'Status', 'Note'],
+        rows.map(v => [v.id, v.depot, v.type, v.temp, v.weightCap, v.volumeCap, v.fuelUsedL, v.fuelQuotaL, v.driverName, v.status === 'available' ? 'Available' : 'In the workshop', v.statusNote]))}>Export CSV</Button></>}>
       <FilterBar>
         <span className="relative sm:w-64"><Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={text} onChange={e => setText(e.target.value)} placeholder="Vehicle or driver" className={cx(inputCls, 'pl-8')} aria-label="Search vehicles" /></span>
         <div className="grid grid-cols-2 gap-2 sm:flex">
@@ -72,6 +73,7 @@ export default function Fleet() {
         </div>
       </Card>
       {edit && <VehicleDialog v={edit} onClose={() => setEdit(null)} />}
+      {adding && <NewVehicleDialog onClose={() => setAdding(false)} />}
     </AdminPage>
   );
 }
@@ -92,6 +94,46 @@ function VehicleDialog({ v, onClose }: { v: any; onClose: () => void }) {
       </div>
       <p className="mt-4 text-[12px] text-slate-500">A vehicle on the road cannot be sent to the workshop from here — report a fault on its trip so the dispatcher can swap it.</p>
       <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={invalid || save.isPending} loading={save.isPending} onClick={() => save.mutate()}>Save</Button></div>
+    </Modal>
+  );
+}
+
+/* Typical capacities by vehicle type, so a new vehicle starts from sensible numbers. */
+const DEFAULTS: Record<string, { weightCap: string; volumeCap: string; kmPerL: string; fuelQuotaL: string }> = {
+  truck: { weightCap: '5510', volumeCap: '26.4', kmPerL: '4.7', fuelQuotaL: '450' },
+  van: { weightCap: '1100', volumeCap: '8', kmPerL: '11.5', fuelQuotaL: '400' },
+};
+
+function NewVehicleDialog({ onClose }: { onClose: () => void }) {
+  const ids = useApi<{ vehicle: string }>(['admin-next-ids'], '/admin/next-ids');
+  const [f, setF] = useState({ id: '', type: 'truck', temp: 'ambient', depot: 'Peliyagoda', driverName: '', ...DEFAULTS.truck, fuelUsedL: '0' });
+  const set = (k: keyof typeof f, v: string) => setF(p => ({ ...p, [k]: v }));
+  const id = (f.id.trim() || ids.data?.vehicle || '').toUpperCase();
+  const save = useAct(() => post(`/admin/vehicles`, {
+    ...(f.id.trim() ? { id } : {}), type: f.type, temp: f.temp, depot: f.depot, driverName: f.driverName.trim(),
+    weightCap: Number(f.weightCap), volumeCap: Number(f.volumeCap), kmPerL: Number(f.kmPerL), fuelQuotaL: Number(f.fuelQuotaL), fuelUsedL: Number(f.fuelUsedL),
+  }), { invalidate: ['admin-vehicles', 'admin-next-ids', 'reference', 'plan', 'overview'], success: (r: any) => `${r?.id ?? 'Vehicle'} added. Add a driver account for it under Users.`, onDone: onClose });
+  const num = (k: 'weightCap' | 'volumeCap' | 'kmPerL' | 'fuelQuotaL') => Number(f[k]) > 0;
+  const bad = f.id.trim() && !/^VEH\d{3}$/i.test(f.id.trim()) ? 'Vehicle ids look like VEH061.'
+    : !f.driverName.trim() || f.driverName.trim().length < 2 ? 'Add the driver name.'
+    : !(num('weightCap') && num('volumeCap') && num('kmPerL') && num('fuelQuotaL')) || !(Number(f.fuelUsedL) >= 0) ? 'Capacities, fuel economy and quota must be above zero.' : null;
+  return (
+    <Modal title="Add a vehicle" onClose={onClose} width={540}>
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Field label="Vehicle id" hint={`Leave empty to use ${ids.data?.vehicle ?? 'the next free id'}`}><input className={inputCls} value={f.id} placeholder={ids.data?.vehicle} onChange={e => set('id', e.target.value)} /></Field>
+        <Field label="Depot"><Select value={f.depot} onChange={v => set('depot', v)} aria-label="Depot" options={[{ value: 'Peliyagoda', label: 'Peliyagoda' }, { value: 'Kandy', label: 'Kandy' }]} /></Field>
+        <Field label="Type"><Select value={f.type} onChange={v => setF(p => ({ ...p, type: v, ...DEFAULTS[v] }))} aria-label="Type" options={[{ value: 'truck', label: 'Truck' }, { value: 'van', label: 'Van', hint: 'Can serve van-only outlets' }]} /></Field>
+        <Field label="Body"><Select value={f.temp} onChange={v => set('temp', v)} aria-label="Body" options={[{ value: 'ambient', label: 'Dry box (ambient)' }, { value: 'reefer', label: 'Reefer (chilled)', hint: 'Can carry chilled orders' }]} /></Field>
+        <Field label="Weight capacity (kg)"><input className={inputCls} type="number" min={1} value={f.weightCap} onChange={e => set('weightCap', e.target.value)} /></Field>
+        <Field label="Volume capacity (m³)"><input className={inputCls} type="number" min={0.1} step={0.1} value={f.volumeCap} onChange={e => set('volumeCap', e.target.value)} /></Field>
+        <Field label="Fuel economy (km per litre)"><input className={inputCls} type="number" min={0.1} step={0.1} value={f.kmPerL} onChange={e => set('kmPerL', e.target.value)} /></Field>
+        <Field label="Weekly fuel quota (L)"><input className={inputCls} type="number" min={1} value={f.fuelQuotaL} onChange={e => set('fuelQuotaL', e.target.value)} /></Field>
+        <Field label="Driver name"><input className={inputCls} value={f.driverName} placeholder="e.g. Nimal Perera" onChange={e => set('driverName', e.target.value)} /></Field>
+        <Field label="Fuel used this week (L)"><input className={inputCls} type="number" min={0} value={f.fuelUsedL} onChange={e => set('fuelUsedL', e.target.value)} /></Field>
+      </div>
+      <p className="mt-4 text-[12px] text-slate-500">The planner can use {id || 'the vehicle'} on the next Auto-plan. To let its driver sign in, add a person with the Driver role under Users and pick this vehicle.</p>
+      {bad && <p className="mt-2 text-[12px] text-red-700">{bad}</p>}
+      <div className="mt-6 flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="primary" icon={<Plus size={15} />} disabled={!!bad || save.isPending} loading={save.isPending} onClick={() => save.mutate()}>Add vehicle</Button></div>
     </Modal>
   );
 }
