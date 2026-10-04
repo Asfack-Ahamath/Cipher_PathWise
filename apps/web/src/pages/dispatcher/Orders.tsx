@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ClipboardList, Search, Phone, Smartphone, AlertTriangle, Plus, Clock, Lock, X, Pencil, Ban } from 'lucide-react';
 import { Toolbar, Tabs, Segmented, Button, Callout, DetailPanel, Modal, Field, inputCls, KeyValues, Pill, PILL_TONE, Empty } from '../../components/ds';
+import { Select } from '../../components/Select';
 import { STATUS } from '../../components/StatusChip';
 import { BrandTag, TempTag, OutletBadges } from '../../components/tags';
 import { DownloadButton, ErrorState, Loading, Status, useAct, useApi, useReference, fmt } from '../../components/common';
@@ -67,8 +68,25 @@ export default function Orders() {
         {tab === 'queue' ? (
           <>
             <div className="flex-1 min-h-0 overflow-auto bg-white pt-[var(--top-h,4rem)]">
-              {rows.length === 0 ? <Empty title="No orders match">Try another filter or clear the search.</Empty> : (
-                <table className="w-full min-w-[1080px] border-collapse">
+              {rows.length === 0 ? <Empty title="No orders match">Try another filter or clear the search.</Empty> : <>
+                {/* phones: one card per order */}
+                <ul className="md:hidden divide-y divide-[#EEF0F3] border-t border-[#EEF0F3]">
+                  {rows.map(o => (
+                    <li key={o.id}>
+                      <button onClick={() => setSel(sel === o.id ? null : o.id)} className={`w-full text-left px-4 py-3.5 ${sel === o.id ? 'bg-teal-50/60' : 'active:bg-slate-50'}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2"><span className="text-[14px] font-semibold text-slate-900">{o.outletId}</span><BrandTag brand={o.brand} /><TempTag temp={o.temp} /></div>
+                            <div className="text-[12px] text-slate-500 mt-0.5">{o.district} · {o.depot} · <span className="font-mono">{o.id}</span></div>
+                          </div>
+                          <div className="flex-shrink-0">{o.placement ? <Pill label={o.placement} color={STATUS.planned.color} bg={STATUS.planned.bg} /> : o.deferral ? <Pill label={`Deferred to ${o.deferral.toDate.slice(5)}`} color={STATUS.deferred.color} bg={STATUS.deferred.bg} /> : <Pill label="Not placed" {...PILL_TONE.neutral} />}</div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-600 tabular"><span>{fmt(o.kg)} kg · {fmt(o.m3, 1)} m³</span><span>{o.open}–{o.close}</span><OutletBadges o={o} />{o.deferredYesterday && <span className="inline-flex items-center gap-1 font-semibold text-red-700"><AlertTriangle size={12} />Skipped last run</span>}</div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <table className="hidden md:table w-full min-w-[1080px] border-collapse">
                   <thead className="sticky top-[var(--top-h,0px)] z-[5] bg-[#F9FAFB] border-b border-[#E4E7EC]">
                     <tr>{['Order', 'Outlet', 'Temp', 'Weight', 'Volume', 'Window', 'Access', 'Last served', 'Source', 'Placement'].map(h => <th key={h} className={th}>{h}</th>)}</tr>
                   </thead>
@@ -95,7 +113,7 @@ export default function Orders() {
                     })}
                   </tbody>
                 </table>
-              )}
+              </>}
             </div>
           </>
         ) : tab === 'cancelled' ? (
@@ -187,10 +205,8 @@ function PhoneOrder({ onClose, outlets }: { onClose: () => void; outlets: any[] 
       ) : (
         <div className="space-y-4">
           <Field label="Outlet">
-            <select className={inputCls} value={outletId} onChange={e => { setOutletId(e.target.value); setUnits({}); setTemp('ambient'); }}>
-              <option value="">Choose an outlet…</option>
-              {outlets.map(o => <option key={o.id} value={o.id}>{o.id} · {o.name.replace(/ · OUT\d+$/, '')}</option>)}
-            </select>
+            <Select value={outletId} onChange={v => { setOutletId(v); setUnits({}); setTemp('ambient'); }} aria-label="Outlet" placeholder="Choose an outlet…" searchable
+              options={outlets.map(o => ({ value: o.id as string, label: `${o.id} · ${o.name.replace(/ · OUT\d+$/, '')}`, hint: `${o.brand} · ${o.district} · ${o.depot}` }))} />
           </Field>
           {ot && <>
             {ot.brand === 'Fresh' && <Segmented value={temp} onChange={v => { setTemp(v); setUnits({}); }} options={[{ id: 'ambient', label: 'Ambient' }, { id: 'chilled', label: 'Chilled' }]} />}

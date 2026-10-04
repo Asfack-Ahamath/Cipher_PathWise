@@ -55,6 +55,7 @@ export default function Forecast() {
               {weeks.some(w => w.kind === 'imported') && <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#6D28D9]" />Datathon forecast (imported)</span>}
               <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-[3px] bg-[#7DD3FC]" />Reefer capacity</span>
             </div>
+            <div className="relative">
             <div className="overflow-x-auto">
               <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[560px]" role="img" aria-label="Weekly chilled demand and capacity">
                 {ticks.map(t => <g key={t}><line x1={P.l} x2={W - P.r} y1={y(t)} y2={y(t)} stroke="#EEF1F5" /><text x={P.l - 6} y={y(t) + 4} textAnchor="end" fontSize="10" fill="#94A3B8">{t}</text></g>)}
@@ -73,10 +74,16 @@ export default function Forecast() {
                 })}
               </svg>
             </div>
-            {hover !== null && (() => { const w = weeks[hover]; return (
-              <div className="mt-2 rounded-lg bg-slate-900 text-white text-[12px] px-3 py-2 inline-block">
-                <b>{w.week}</b> · {KIND[w.kind]?.label} · {dayLabel(w.start)}–{dayLabel(w.end)} · {w.opDays} operating days · demand {fmt(w.chilled)} m³ · capacity {fmt(w.reeferCap)} m³ · {w.gap < 0 ? `short ${-w.gap} m³ (~${Math.ceil(-w.gap / Math.max(1, perTrip))} extra reefer-days)` : `spare ${w.gap} m³`}
+            {hover !== null && (() => { const w = weeks[hover]; const cx0 = (P.l + hover * bw + bw / 2) / W * 100; const edge = hover < 2 ? 'left' : hover > weeks.length - 3 ? 'right' : 'mid'; return (
+              <div className="absolute z-10 top-0 w-[260px] pointer-events-none rounded-lg bg-slate-900 text-white text-[12px] px-3 py-2.5 shadow-lg anim-fade-in"
+                style={edge === 'mid' ? { left: `${cx0}%`, transform: 'translateX(-50%)' } : edge === 'left' ? { left: `${cx0}%`, transform: 'translateX(-30px)' } : { left: `${cx0}%`, transform: 'translateX(calc(-100% + 30px))' }}>
+                <div className="font-semibold">{w.week} · {KIND[w.kind]?.label}</div>
+                <div className="text-white/60 mb-1.5">{dayLabel(w.start)} – {dayLabel(w.end)} · {w.opDays} operating days</div>
+                <div className="flex justify-between"><span>Demand</span><b className="tabular">{fmt(w.chilled)} m³</b></div>
+                <div className="flex justify-between"><span>Capacity</span><b className="tabular">{fmt(w.reeferCap)} m³</b></div>
+                <div className={cx('mt-1.5 pt-1.5 border-t border-white/15 font-semibold', w.gap < 0 ? 'text-rose-300' : 'text-emerald-300')}>{w.gap < 0 ? `Short ${-w.gap} m³ (~${Math.ceil(-w.gap / Math.max(1, perTrip))} extra reefer-days)` : `Spare ${w.gap} m³`}</div>
               </div>); })()}
+            </div>
           </Card>
           <Card pad={false}>
             <div className="overflow-x-auto">

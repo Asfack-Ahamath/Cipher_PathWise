@@ -13,6 +13,28 @@ One responsive web app for five roles — Administrator, Dispatcher, Loader, Dri
 
 ---
 
+## Architecture at a glance
+
+npm workspaces monorepo. One language (TypeScript), one planning rulebook, one Postgres database.
+
+| Layer | Path | Stack / role |
+|---|---|---|
+| Planning engine | `packages/core` | Pure TypeScript (no I/O): trip schedule formula, `validatePlan`, `autoPlan` + deferral reasons, ETA (traffic / road / holds), capacity forecast, Task 2B peak-day checker, deterministic demo day |
+| API | `apps/api` | Fastify 5 + `pg` + zod · JWT / bcrypt or Supabase Auth · plain SQL migrations (`001`–`003`) · SSE live events · serves built web in production |
+| Web | `apps/web` | React 19 + Vite 6 + Tailwind 4 · TanStack Query · React Router · Leaflet · PWA (`vite-plugin-pwa`) + IndexedDB outbox for the driver |
+| Data | PostgreSQL 16 (Docker / laptop / Supabase) | Reference CSVs + operational tables · RLS · append-only `stop_events` / `audit_log` · optional Supabase Storage for proofs |
+
+**Role routes** (one app, five shells): `/a` admin · `/d` dispatcher · `/l` loader · `/r` driver · `/s` store manager.
+
+```
+Browser (role UI) ──HTTPS /api + JWT──► Fastify API ──► packages/core (plan / validate / ETA)
+                              │                └──► PostgreSQL (or Supabase Postgres)
+                              └── SSE /api/events (live screens; polling fallback)
+Driver phone also: GET /api/driver/run · POST /api/driver/sync (batched, idempotent, offline-safe)
+```
+
+---
+
 ## What it does
 
 - **Plans a real day.** 143 confirmed orders, 60 vehicles, 120 outlets, two depots. Auto-plan builds trips that respect every constraint — weight and volume, chilled on reefers, van-only outlets, one brand and district per trip, delivery and mall windows, the Fresh 270-minute and Style/Tech 480-minute budgets (booklet formula: outbound + inter-stop × (orders − 1) + service allowance per order), two trips per vehicle, weekly fuel quotas, vehicles in the workshop.
@@ -37,7 +59,7 @@ cd Cipher_PathWise
 docker compose up --build
 ```
 
-Open **http://localhost:8080**. The first start creates the tables and loads the datasets and the demo day (≈ 10 s). No `.env` is needed. To start again from a clean database: `docker compose down -v && docker compose up --build`.
+Open **http://localhost:8080** (override with `APP_PORT`). The first start creates the tables and loads the datasets and the demo day (≈ 10 s). No `.env` is needed. To start again from a clean database: `docker compose down -v && docker compose up --build`.
 
 Official dataset CSVs: unzip the official pack into [`data/`](data/README.md) (either the files directly or the `General Data/` folder) before the first start. Without them the seed uses the copy bundled in `packages/core`.
 
@@ -58,6 +80,8 @@ npm run local               # builds, starts the database from ./.pgdata, serves
 
 ### Development with your own PostgreSQL or Supabase
 
+`db:migrate`, `db:seed`, and the related `db:*` / `admin:set-password` scripts build `@pathwise/core` first (same as `npm run dev`), so a fresh `npm install` does not fail with a missing `packages/core/dist` error.
+
 ```bash
 npm install
 cp .env.example .env          # set DATABASE_URL (and the Supabase values if you use it)
@@ -68,10 +92,12 @@ npm run dev                   # API on :8080, web on http://localhost:5173
 
 | Script | What |
 |---|---|
-| `npm test` | planning engine (18) + API tests on a real PostgreSQL (29: walkthrough, security and admin, Supabase Auth/Storage/RLS against a mock) |
+| `npm test` | Planning engine (**18** Vitest cases) + API tests on real PostgreSQL (**29**: judge walkthrough, security/admin, mocked Supabase Auth/Storage/RLS) — **47** total |
 | `npm run typecheck` · `npm run build` · `npm start` | checks · production build · serve API + built web on :8080 |
 | `npm run db:reset-demo` · `npm run db:conditions` | reload the demo day · reload traffic/road/demand tables |
 | `npm run admin:set-password -- <email> <password>` | break-glass local password |
+
+CI (`.github/workflows/ci.yml`): build, typecheck, engine tests, API tests against Postgres 16, and a `docker compose` health + login smoke test.
 
 ---
 
@@ -177,16 +203,16 @@ Everything is implemented; these are the values only you can provide. Full detai
 
 ```
 Cipher_PathWise/
-├─ packages/core/        Planning engine (pure TypeScript): schedule, validate, autoPlan, ETA, forecast, peak-day checker · unit tests
-├─ apps/api/             Fastify API: migrations, seed, services, routes, Supabase Auth/Storage adapters · API tests
-├─ apps/web/             React 19 + Vite + Tailwind PWA: admin (/a), dispatcher (/d), loader (/l), driver (/r), store (/s)
-├─ data/                 Drop the official dataset CSVs here (git-ignored)
-├─ docs/                 Architecture, Supabase, security, data model, planning engine, degradation, API, AI disclosure
-├─ scripts/              Laptop runner (embedded PostgreSQL), dataset bundler
-├─ Dockerfile            One image: API + built web app
-├─ docker-compose.yml    PostgreSQL + app, migrations and seed on start
-├─ render.yaml           Deploy on Render against Supabase
-└─ .github/workflows/    CI: build, typecheck, engine tests, API tests on Postgres, docker compose smoke test
+├─ packages/core/     Pure planning engine + bundled dataset rows + Vitest (18)
+├─ apps/api/          Fastify API, SQL migrations, seed, services, routes, Vitest (29)
+├─ apps/web/          React PWA: /a admin · /d dispatcher · /l loader · /r driver · /s store
+├─ data/              Drop official dataset CSVs here (git-ignored)
+├─ docs/              Architecture, Supabase, security, data model, planning, degradation, API, AI disclosure
+├─ scripts/           Laptop runner (embedded PostgreSQL), dataset bundler
+├─ Dockerfile         One image: Node 22 · API + built web · health on :8080
+├─ docker-compose.yml PostgreSQL 16 + app; migrate/seed on start
+├─ render.yaml        Deploy on Render against Supabase
+└─ .github/workflows/ CI: build, typecheck, engine + API tests, compose smoke
 ```
 
 ## Engineering notes
@@ -194,10 +220,10 @@ Cipher_PathWise/
 - **One language, one rulebook.** TypeScript end to end; `packages/core` is shared by the planner, the validator, the ETA model, the forecast and the peak-day checker, so they cannot disagree.
 - **Plain SQL, versioned, constrained.** Three migrations with check constraints, indexes, triggers and row-level security; transactions around every multi-row change; append-only `stop_events` and `audit_log`.
 - **Validation at the edge.** Every body, query and parameter is parsed with zod; business-rule failures return `409` with a sentence a person can act on and a machine code.
-- **Security.** See [security.md](docs/security.md): roles and scopes on every route, bcrypt or Supabase Auth, lockout, token-version revocation, rate limits, CSP, private files with access checks, redacted audit log.
+- **Security.** See [security.md](docs/security.md): roles and scopes on every route, bcrypt or Supabase Auth, lockout, token-version revocation, rate limits, CSP, private files with access checks, redacted audit log. The browser never holds the Supabase service-role key.
 - **Live.** Server-Sent Events tell each screen what changed; polling stays as the fallback.
 - **Offline.** Service worker for the app shell, IndexedDB for the run and the outbox, idempotent batch sync. See [degradation.md](docs/degradation.md).
-- **Tests.** 47 automated tests plus a browser run of this walkthrough on desktop, tablet and phone sizes.
+- **Tests.** 47 automated tests (18 engine + 29 API) plus a browser run of this walkthrough on desktop, tablet and phone sizes.
 
 ## Deploy
 

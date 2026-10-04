@@ -1,8 +1,10 @@
+import os from 'node:os';
 import { randomInt } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { FORECAST_HORIZON } from '@pathwise/core';
 import { audit } from '../audit.js';
+import { localDate, nowSync } from '../clock.js';
 import { forgetUser, hashPassword, PasswordPolicy, type AuthUser } from '../auth.js';
 import { config } from '../config.js';
 import { one, pool, q, tx } from '../db.js';
@@ -202,6 +204,79 @@ export async function signOutUser(admin: AuthUser, id: number) {
   return { ok: true };
 }
 
+export const BulkBody = z.object({ ids: z.array(z.number().int().positive()).min(1).max(200), action: z.enum(['disable', 'enable', 'sign-out', 'unlock']) });
+/** One action for many people. Each person goes through the same checks as the single action; failures are reported, not thrown. */
+export async function bulkUsers(admin: AuthUser, b: z.infer<typeof BulkBody>) {
+  const failed: { id: number; error: string }[] = [];
+  let done = 0;
+  for (const id of [...new Set(b.ids)]) {
+    try {
+      if (b.action === 'disable' || b.action === 'enable') await updateUser(admin, id, { isActive: b.action === 'enable' });
+      else if (b.action === 'sign-out') await signOutUser(admin, id);
+      else await unlockUser(admin, id);
+      done++;
+    } catch (e: any) { failed.push({ id, error: e.message ?? 'Failed' }); }
+  }
+  return { done, failed };
+}
+
+/* ── overview ── */
+/** Sign-in activity and account health for the admin landing page (business clock, Colombo days). */
+export async function adminOverview() {
+  const now = nowSync();
+  const days = Array.from({ length: 7 }, (_, i) => localDate(new Date(now.getTime() - (6 - i) * 86_400_000)));
+  const [daily, active, byArea, roles] = await Promise.all([
+    q<{ day: string; ok: number; failed: number; changes: number }>(`SELECT to_char((at AT TIME ZONE 'Asia/Colombo')::date, 'YYYY-MM-DD') AS day,
+        count(*) FILTER (WHERE action = 'auth.login')::int AS ok,
+        count(*) FILTER (WHERE action IN ('auth.login_failed', 'auth.pin_failed', 'auth.locked'))::int AS failed,
+        count(*) FILTER (WHERE action NOT LIKE 'auth.%')::int AS changes
+      FROM audit_log WHERE at > $1::timestamptz - interval '7 days' AND at <= $1 GROUP BY 1`, [now]),
+    one<{ day: number; week: number }>(`SELECT count(DISTINCT user_id) FILTER (WHERE at > $1::timestamptz - interval '1 day')::int AS day, count(DISTINCT user_id)::int AS week
+      FROM audit_log WHERE action = 'auth.login' AND at > $1::timestamptz - interval '7 days' AND at <= $1`, [now]),
+    q<{ area: string; n: number }>(`SELECT split_part(action, '.', 1) AS area, count(*)::int AS n FROM audit_log WHERE at > $1::timestamptz - interval '7 days' AND at <= $1 GROUP BY 1 ORDER BY 2 DESC LIMIT 8`, [now]),
+    q<{ role: string; total: number; active: number }>(`SELECT role, count(*)::int AS total, count(*) FILTER (WHERE is_active)::int AS active FROM users GROUP BY role`),
+  ]);
+  const byDay = new Map(daily.map(d => [d.day, d]));
+  return {
+    now: now.toISOString(),
+    days: days.map(day => ({ day, ok: byDay.get(day)?.ok ?? 0, failed: byDay.get(day)?.failed ?? 0, changes: byDay.get(day)?.changes ?? 0 })),
+    activeUsers: active ?? { day: 0, week: 0 }, byArea, roles,
+  };
+}
+
+/* ── announcements ── */
+const AUDIENCES = ['all', 'role:dispatcher', 'role:loader', 'role:driver', 'role:store_manager', 'depot:Peliyagoda', 'depot:Kandy'] as const;
+export const AnnouncementBody = z.object({
+  audience: z.enum(AUDIENCES),
+  title: z.string().trim().min(3, 'Give it a short title.').max(80),
+  body: z.string().trim().max(500).default(''),
+  tone: z.enum(['blue', 'green', 'amber', 'red']).default('blue'),
+});
+/** 'all' fans out to every role audience so each person sees it once in their own bell. The rows of one
+ *  announcement share kind and created_at, which is how they are listed and removed together. */
+const fanOut = (a: string) => (a === 'all' ? ['role:admin', 'role:dispatcher', 'role:loader', 'role:driver', 'role:store_manager'] : [a]);
+export async function listAnnouncements() {
+  return q<any>(`SELECT min(n.id) AS id, n.title, n.body, n.tone, n.created_at AS "createdAt", array_agg(n.audience ORDER BY n.audience) AS audiences,
+      count(r.user_id)::int AS reads
+    FROM notifications n LEFT JOIN notification_reads r ON r.notification_id = n.id
+    WHERE n.kind = 'announcement' GROUP BY n.created_at, n.title, n.body, n.tone ORDER BY n.created_at DESC LIMIT 100`);
+}
+export async function createAnnouncement(admin: AuthUser, b: z.infer<typeof AnnouncementBody>) {
+  const auds = fanOut(b.audience);
+  await tx(async c => {
+    await c.query(`INSERT INTO notifications (audience, kind, title, body, tone, created_at) SELECT a, 'announcement', $2, $3, $4, $5 FROM unnest($1::text[]) a`, [auds, b.title, b.body, b.tone, nowSync()]);
+    await audit(c, admin.id, 'announcement.create', null, { audience: b.audience, title: b.title });
+  });
+  return { ok: true };
+}
+export async function deleteAnnouncement(admin: AuthUser, id: number) {
+  const n = await one<{ title: string; created_at: Date }>(`SELECT title, created_at FROM notifications WHERE id = $1 AND kind = 'announcement'`, [id]);
+  if (!n) throw notFound('Announcement not found.');
+  const r = await q(`DELETE FROM notifications WHERE kind = 'announcement' AND created_at = $1 AND title = $2 RETURNING id`, [n.created_at, n.title]);
+  await audit(pool, admin.id, 'announcement.delete', null, { title: n.title, removed: r.length });
+  return { removed: r.length };
+}
+
 /* ── fleet and outlets ── */
 export async function listVehicles() {
   return q<any>(`SELECT v.id, v.type, v.temp, v.depot, v.weight_cap AS "weightCap", v.volume_cap AS "volumeCap", v.km_per_l AS "kmPerL", v.fuel_quota_l AS "fuelQuotaL", v.fuel_used_l AS "fuelUsedL",
@@ -358,12 +433,20 @@ export async function systemHealth() {
   const dbMs = Date.now() - t0;
   const migrations = await q<any>(`SELECT name, applied_at AS "appliedAt" FROM schema_migrations ORDER BY name`);
   const rls = await q<any>(`SELECT c.relname AS table, c.relrowsecurity AS rls FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1`);
+  // storage: database size and the biggest tables (row counts are the planner's estimates)
+  const dbSize = await one<{ bytes: string }>(`SELECT pg_database_size(current_database())::text AS bytes`);
+  const tables = await q<{ name: string; rows: number; bytes: string }>(`SELECT c.relname AS name, greatest(c.reltuples, 0)::bigint::int AS rows, pg_total_relation_size(c.oid)::text AS bytes
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8`);
+  const mem = process.memoryUsage();
   const supabase = config.authProvider === 'supabase' || config.storageProvider === 'supabase' ? await sbHealth() : null;
   return {
     status: 'ok', uptimeSec: Math.round((Date.now() - started) / 1000), node: process.version, env: config.env,
     database: { ok: true, latencyMs: dbMs, name: db.name, version: String(db.version).split(' ').slice(0, 2).join(' '), ssl: config.databaseSsl, pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount } },
     migrations, rls: { enabled: rls.filter(r => r.rls).length, total: rls.length, missing: rls.filter(r => !r.rls && r.table !== 'schema_migrations').map(r => r.table) },
     providers: { auth: config.authProvider, storage: config.storageProvider, supabaseUrl: config.supabase.url || null, bucket: config.storageProvider === 'supabase' ? config.supabase.bucket : null },
+    storage: { dbBytes: Number(dbSize?.bytes ?? 0), tables: tables.map(t => ({ name: t.name, rows: t.rows, bytes: Number(t.bytes) })) },
+    process: { rssMb: Math.round(mem.rss / 1048576), heapUsedMb: Math.round(mem.heapUsed / 1048576), heapTotalMb: Math.round(mem.heapTotal / 1048576), cpus: os.cpus().length },
+    now: nowSync().toISOString(), checkedAt: new Date().toISOString(),
     supabase, demoMode: config.demoMode, corsOrigins: config.corsOrigins,
   };
 }

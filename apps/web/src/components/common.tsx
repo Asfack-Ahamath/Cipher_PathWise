@@ -5,24 +5,33 @@ import { api, ApiError, download, fetchBlob } from '../lib/api';
 import { STATUS } from './StatusChip';
 import { Spinner, cx } from './ds';
 
-/* ── Toasts ── */
-type ToastT = { id: number; tone: 'success' | 'error' | 'info'; text: string };
-const ToastCtx = createContext<(tone: ToastT['tone'], text: string) => void>(() => {});
+/* ── Toasts ──
+   The one place success, error, warning and info messages appear: a stack at the bottom centre, clear of the top bar.
+   Use `const toast = useToast(); toast('success' | 'error' | 'warning' | 'info', 'Text')`. */
+type ToastTone = 'success' | 'error' | 'warning' | 'info';
+type ToastT = { id: number; tone: ToastTone; text: string };
+const ToastCtx = createContext<(tone: ToastTone, text: string) => void>(() => {});
+const TOAST_STYLE: Record<ToastTone, { box: string; icon: ReactNode }> = {
+  success: { box: 'bg-slate-900 text-white', icon: <CheckCircle2 size={17} className="text-emerald-300" /> },
+  error: { box: 'bg-red-600 text-white', icon: <AlertTriangle size={17} /> },
+  warning: { box: 'bg-amber-500 text-slate-950', icon: <AlertTriangle size={17} /> },
+  info: { box: 'bg-slate-800 text-white', icon: <Info size={17} className="text-sky-300" /> },
+};
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastT[]>([]);
-  const push = useCallback((tone: ToastT['tone'], text: string) => {
+  const push = useCallback((tone: ToastTone, text: string) => {
     const id = Date.now() + Math.random();
-    setItems(i => [...i.slice(-3), { id, tone, text }]);
-    setTimeout(() => setItems(i => i.filter(x => x.id !== id)), tone === 'error' ? 7000 : 4000);
+    // an identical message already on screen is not stacked again
+    setItems(i => i.some(x => x.tone === tone && x.text === text) ? i : [...i.slice(-3), { id, tone, text }]);
+    setTimeout(() => setItems(i => i.filter(x => x.id !== id)), tone === 'error' || tone === 'warning' ? 7000 : 4000);
   }, []);
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div className="fixed z-[70] bottom-4 left-1/2 -translate-x-1/2 w-[min(440px,calc(100vw-24px))] space-y-2 pointer-events-none" aria-live="polite">
+      <div className="fixed z-[70] bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 w-[min(440px,calc(100vw-24px))] space-y-2 pointer-events-none" aria-live="polite">
         {items.map(t => (
-          <div key={t.id} className={cx('pointer-events-auto flex items-start gap-2.5 rounded-xl px-4 py-3 text-[13px] font-medium shadow-[0_16px_40px_-12px_rgba(15,23,42,.35)]',
-            t.tone === 'success' ? 'bg-slate-900 text-white' : t.tone === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white')}>
-            {t.tone === 'success' ? <CheckCircle2 size={16} className="text-emerald-300 mt-[1px] flex-shrink-0" /> : t.tone === 'error' ? <AlertTriangle size={16} className="mt-[1px] flex-shrink-0" /> : <Info size={16} className="text-sky-300 mt-[1px] flex-shrink-0" />}
+          <div key={t.id} role={t.tone === 'error' ? 'alert' : 'status'} className={cx('anim-toast pointer-events-auto flex items-start gap-2.5 rounded-xl px-4 py-3 text-[13px] font-medium shadow-[0_16px_40px_-12px_rgba(15,23,42,.35)]', TOAST_STYLE[t.tone].box)}>
+            <span className="mt-[1px] flex-shrink-0">{TOAST_STYLE[t.tone].icon}</span>
             <span className="flex-1">{t.text}</span>
             <button onClick={() => setItems(i => i.filter(x => x.id !== t.id))} aria-label="Dismiss" className="opacity-60 hover:opacity-100"><X size={14} /></button>
           </div>
@@ -60,21 +69,28 @@ export function useReference() {
 
 /* ── States ── */
 /* The one loading state. Default fills its container; `page` centres it on the whole screen; `inline` is a small spinner + label. */
-export function Loading({ label = 'Loading…', className, variant = 'block' }: { label?: string; className?: string; variant?: 'block' | 'page' | 'inline' }) {
+export function Loading({ label = 'Loading…', className, variant = 'block' }: { label?: string; className?: string; variant?: 'block' | 'page' | 'inline' | 'overlay' }) {
   if (variant === 'inline') return <span className={cx('inline-flex items-center gap-2 text-[13px] text-slate-500', className)}><Spinner size={14} />{label}</span>;
-  return (
-    <div className={cx('flex flex-col items-center justify-center gap-3 text-[13px] text-slate-500', variant === 'page' ? 'min-h-[100dvh]' : 'py-16', className)} role="status" aria-live="polite">
-      <Spinner size={28} className="text-teal-700" />
-      <span>{label}</span>
+  const loader = (
+    <div className="flex flex-col items-center justify-center gap-4 text-[13px] font-medium text-slate-500" role="status" aria-live="polite">
+      <span className="pw-loader" aria-hidden><i /><i /><i /><b /></span>
+      <span className="pw-loader-label">{label}</span>
     </div>
   );
+  // overlay: sits centred over a page that already has data, dimming it while fresh data loads
+  if (variant === 'overlay') return <div className={cx('absolute inset-x-0 bottom-0 top-16 z-20 bg-white/65 backdrop-blur-[2px] anim-fade-in', className)}><div className="sticky top-[42vh] flex justify-center">{loader}</div></div>;
+  return <div className={cx('flex items-center justify-center w-full', variant === 'page' ? 'min-h-[100dvh]' : 'flex-1 min-h-[50vh] py-16', className)}>{loader}</div>;
 }
+/* A failed load: the message goes to the bottom toast (never hidden under the top bar) and the screen shows a centred retry. */
 export function ErrorState({ error, retry }: { error: unknown; retry?: () => void }) {
+  const toast = useToast();
+  const message = (error as any)?.message ?? String(error);
+  useEffect(() => { toast('error', message); }, [message, toast]);
   return (
-    <div className="m-6 rounded-xl border border-red-200 bg-red-50 p-4 text-[13px] text-red-900 flex items-start gap-2.5">
-      <AlertTriangle size={16} className="text-red-600 mt-[1px]" />
-      <div className="flex-1"><div className="font-semibold">Could not load this screen</div><div>{(error as any)?.message ?? String(error)}</div></div>
-      {retry && <button onClick={retry} className="text-[12px] font-semibold underline">Try again</button>}
+    <div className="flex-1 min-h-[50vh] w-full flex flex-col items-center justify-center gap-3 px-6 text-center anim-fade-in" role="alert">
+      <span className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center"><AlertTriangle size={22} /></span>
+      <div><div className="text-[15px] font-semibold text-slate-900">Could not load this screen</div><div className="mt-0.5 text-[13px] text-slate-500 max-w-[360px]">{message}</div></div>
+      {retry && <button onClick={retry} className="h-9 px-4 rounded-lg bg-slate-900 text-white text-[13px] font-semibold hover:bg-slate-800">Try again</button>}
     </div>
   );
 }

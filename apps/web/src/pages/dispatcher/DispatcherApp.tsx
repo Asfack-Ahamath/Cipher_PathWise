@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ElementType } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ElementType } from 'react';
 import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, ClipboardList, KanbanSquare, CalendarClock, MapPin, AlertTriangle, BarChart3, Route as RouteIcon, PanelLeftClose, PanelLeftOpen, LogOut, Bell, Clock, X, ChevronRight, RotateCcw, Menu, FlaskConical, Settings2, KeyRound } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -30,7 +30,7 @@ export default function DispatcherApp() {
   const clock = useApi<any>(['clock'], '/clock', { refetchInterval: 60_000 });
   return (
     <DepotCtx.Provider value={depot}>
-      <div className="h-[100dvh] flex bg-[#F4F6FA] overflow-hidden">
+      <div className="app-shell pw-zoom flex bg-[#F4F6FA] overflow-hidden">
         <Sidebar mobileOpen={mobileNav} onClose={() => setMobileNav(false)} />
         <div className="relative flex-1 min-w-0 flex flex-col">
           <TopNav depot={depot} setDepot={setDepot} onMenu={() => setMobileNav(true)} live={live} setClockOpen={setClockOpen} />
@@ -48,8 +48,8 @@ export default function DispatcherApp() {
             </Routes>
           </main>
         </div>
+        {clockOpen && <ClockDialog onClose={() => setClockOpen(false)} planDate={clock.data?.planDate} />}
       </div>
-      {clockOpen && <ClockDialog onClose={() => setClockOpen(false)} planDate={clock.data?.planDate} />}
     </DepotCtx.Provider>
   );
 }
@@ -89,7 +89,7 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
           {expanded ? (
             <div className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg,#2DD4BF,#0F766E)', boxShadow: '0 8px 20px -8px #14B8A6' }}><RouteIcon size={18} className="text-white" /></div>
           ) : (
-            <button onClick={() => setOpen(true)} title="Expand sidebar" aria-label="Expand sidebar" className="w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 bg-white/10 text-white hover:bg-white/20"><PanelLeftOpen size={18} /></button>
+            <button onClick={() => setOpen(true)} title="Expand sidebar" aria-label="Expand sidebar" className="relative w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 text-white overflow-hidden group/exp" style={{ background: 'linear-gradient(135deg,#2DD4BF,#0F766E)', boxShadow: '0 8px 20px -8px #14B8A6' }}><span className="transition duration-150 group-hover/head:opacity-0 group-hover/head:scale-75 group-focus-visible/exp:opacity-0"><RouteIcon size={18} className="text-white" /></span><span className="absolute inset-0 flex items-center justify-center bg-white/20 opacity-0 scale-75 transition duration-150 group-hover/head:opacity-100 group-hover/head:scale-100 group-focus-visible/exp:opacity-100"><PanelLeftOpen size={18} /></span></button>
           )}
           {expanded && <div className="leading-tight flex-1 min-w-0">
             <div className="text-[16px] font-semibold text-white tracking-[-0.01em]">PathWise</div>
@@ -148,6 +148,15 @@ function TopNav({ depot, setDepot, onMenu, live, setClockOpen }: { depot: DepotF
   const nav = useNavigate();
   const now = useNow(15_000);
   const [open, setOpen] = useState(false);
+  // close on any click outside the panel (or its bell), or on Escape; the header's blur breaks a full-screen overlay
+  const panelRef = useRef<HTMLDivElement>(null), bellRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: Event) => { const t = e.target as Node; if (!panelRef.current?.contains(t) && !bellRef.current?.contains(t)) setOpen(false); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', down); document.addEventListener('touchstart', down); document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('touchstart', down); document.removeEventListener('keydown', key); };
+  }, [open]);
   const clock = useApi<any>(['clock'], '/clock', { refetchInterval: 60_000 });
   const notes = useApi<any>(['notifications'], '/notifications', { refetchInterval: 15_000 });
   const ex = useApi<any[]>(['exceptions'], '/exceptions', { refetchInterval: 15_000 });
@@ -168,15 +177,14 @@ function TopNav({ depot, setDepot, onMenu, live, setClockOpen }: { depot: DepotF
       <div className="flex items-center gap-2">
         <LiveDot state={live} />
         <button onClick={(e) => { e.stopPropagation(); clock.data?.demoMode !== false && setClockOpen(true); }} disabled={clock.data?.demoMode === false} title={clock.data?.demoMode === false ? 'Business time' : 'Demo clock — change the business time'} className="flex flex-shrink-0 whitespace-nowrap items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold text-slate-700 tabular bg-slate-100 hover:bg-slate-200"><Clock size={13} className="text-slate-500" /><span className="hidden sm:inline">{dayLabel(now)} ·</span>{hhmm(now)}</button>
-        <button onClick={() => setOpen(!open)} className="relative w-9 h-9 flex items-center justify-center rounded-md hover:bg-slate-100" aria-label={`Notifications, ${unread + openEx.length} to read`}>
+        <button ref={bellRef} onClick={() => setOpen(!open)} className="relative w-9 h-9 flex items-center justify-center rounded-md hover:bg-slate-100" aria-label={`Notifications, ${unread + openEx.length} to read`}>
           <Bell size={17} className="text-slate-500" />
           {unread + openEx.length > 0 && <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center tabular bg-red-600 ring-2 ring-white">{openEx.length || unread}</span>}
         </button>
       </div>
       {open && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-4 top-[60px] z-40 w-[400px] max-w-[calc(100vw-32px)] bg-white border border-[#E4E7EC] rounded-xl shadow-[0_16px_40px_-12px_rgba(15,23,42,.25)] overflow-hidden">
+          <div ref={panelRef} className="absolute right-4 top-[60px] z-40 w-[400px] max-w-[calc(100vw-32px)] bg-white border border-[#E4E7EC] rounded-xl shadow-[0_16px_40px_-12px_rgba(15,23,42,.25)] overflow-hidden">
             <div className="flex items-center justify-between px-4 h-12 border-b border-[#E4E7EC]">
               <span className="text-[14px] font-semibold text-slate-900">Notifications</span>
               <div className="flex items-center gap-2">

@@ -162,10 +162,10 @@ export function Metric({ label, value, unit, tone = 'default', hint }: { label: 
 /* ── Tabs (underline) and segmented filter ── */
 export function Tabs<T extends string>({ items, value, onChange, className }: { items: { id: T; label: ReactNode }[]; value: T; onChange: (v: T) => void; className?: string }) {
   return (
-    <div role="tablist" className={cx('flex items-center gap-5 border-b border-[#E4E7EC]', className)}>
+    <div role="tablist" className={cx('flex items-center gap-5 border-b border-[#E4E7EC] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', className)}>
       {items.map(i => (
         <button key={i.id} role="tab" aria-selected={value === i.id} onClick={() => onChange(i.id)}
-          className={cx('-mb-px h-10 border-b-2 text-[13px] font-semibold whitespace-nowrap transition-colors', value === i.id ? 'border-teal-700 text-teal-800' : 'border-transparent text-slate-500 hover:text-slate-800')}>
+          className={cx('-mb-px h-10 flex-shrink-0 border-b-2 text-[13px] font-semibold whitespace-nowrap transition-colors', value === i.id ? 'border-teal-700 text-teal-800' : 'border-transparent text-slate-500 hover:text-slate-800')}>
           {i.label}
         </button>
       ))}
