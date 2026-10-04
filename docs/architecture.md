@@ -4,7 +4,8 @@ PathWise is one TypeScript monorepo with three parts and one database.
 
 ```mermaid
 flowchart LR
-  subgraph Clients["Browsers (one responsive web app, four roles)"]
+  subgraph Clients["Browsers (one responsive web app, five roles)"]
+    AD["Administrator<br/>desktop"]
     D["Dispatcher<br/>desktop"]
     L["Loader<br/>dock tablet / phone"]
     R["Driver<br/>phone · installable PWA<br/>offline outbox"]
@@ -21,12 +22,12 @@ flowchart LR
   DB[("PostgreSQL 16 / Supabase Postgres<br/>reference data · orders · plans<br/>trips · events · audit · RLS")]
   SB["Supabase Auth + Storage<br/>(optional, server-side only)"]
 
-  D & L & S -- "HTTPS /api (JWT)" --> A
+  AD & D & L & S -- "HTTPS /api (JWT)" --> A
   R -- "GET /api/driver/run<br/>POST /api/driver/sync (batched, idempotent)" --> A
-  D & L & R & S -. "load app shell" .-> W
+  AD & D & L & R & S -. "load app shell" .-> W
   A --> DB
   A -. "AUTH_PROVIDER / STORAGE_PROVIDER = supabase" .-> SB
-  A -- "Server-Sent Events /api/events" --> D & L & S
+  A -- "Server-Sent Events /api/events" --> AD & D & L & S
   CSV["data/*.csv<br/>(competition datasets)"] -. "seed on first start" .-> A
 ```
 
@@ -34,7 +35,7 @@ flowchart LR
 |---|---|---|
 | Planning engine | `packages/core` | Pure, dependency-free domain logic: trip time formula, validation of every rule, the auto-planner and its deferral explanations, the deterministic demo day. Unit-tested without a database. |
 | API | `apps/api` | Fastify 5 + `pg` (plain SQL, versioned migrations). Auth (JWT, bcrypt, dock PIN), role guards, business clock, plan drafts and publishing, loading, driver sync, exceptions and decisions, notifications, audit log. Serves the built web app in production. |
-| Web | `apps/web` | React 19 + Vite + Tailwind v4, TanStack Query, React Router, Leaflet. One app, four role areas (`/d`, `/l`, `/r`, `/s`). The driver area is offline-first (service worker + IndexedDB outbox). |
+| Web | `apps/web` | React 19 + Vite 6 + Tailwind v4, TanStack Query, React Router, Leaflet. One app, five role areas (`/a`, `/d`, `/l`, `/r`, `/s`). The driver area is offline-first (service worker + IndexedDB outbox). |
 | Database | PostgreSQL 16 or Supabase | Reference data from the CSVs, operational data, append-only `stop_events` and `audit_log`, row-level security on every table. See [data-model.md](data-model.md) and [supabase.md](supabase.md). |
 | Admin | `apps/web/src/pages/admin`, `apps/api/src/services/admin.ts` | People and access, fleet, outlets, planning rules and operating settings, data imports (Datathon forecast), audit log, system health. |
 
