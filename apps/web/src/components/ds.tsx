@@ -270,6 +270,15 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 export const inputCls = 'w-full h-9 px-3 text-[13px] text-slate-900 bg-white border border-[#D0D5DD] rounded-md placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15';
 
 /* ── Status pill (lifecycle + connectivity) ── */
+/** Header-cell classes shared by the admin and dispatcher tables. Kept as one full literal so Tailwind sees every class. */
+export const thCls = 'text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10';
+
+/** Colour pairs for the Pill component. */
+export const PILL_TONE = {
+  success: { color: '#047857', bg: '#D1FAE5' },
+  neutral: { color: '#475569', bg: '#F1F5F9' },
+} as const;
+
 export function Pill({ label, color, bg, icon }: { label: string; color: string; bg: string; icon?: ReactNode }) {
   return <span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-full text-[12px] font-semibold whitespace-nowrap" style={{ color, background: bg }}>{icon}{label}</span>;
 }

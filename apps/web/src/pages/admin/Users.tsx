@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { KeyRound, Lock, LogOut, Mail, Plus, Search, ShieldCheck, Unlock, UserCog, Users as UsersIcon } from 'lucide-react';
-import { Button, Card, Empty, Field, Modal, Segmented, cx, inputCls } from '../../components/ds';
+import { Button, Card, Empty, Field, Modal, Segmented, cx, inputCls, thCls } from '../../components/ds';
 import { ErrorState, Loading, useAct, useApi, useReference, useToast } from '../../components/common';
 import { patch, post, type ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -32,7 +32,7 @@ export default function Users() {
         {rows.length === 0 ? <Empty icon={<UsersIcon size={20} />} title="No one matches">Change the search or the role filter.</Empty> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-[13px]">
-              <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Person', 'Role', 'Scope', 'Sign-in', 'Last sign-in', 'Status', ''].map(h => <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10">{h}</th>)}</tr></thead>
+              <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Person', 'Role', 'Scope', 'Sign-in', 'Last sign-in', 'Status', ''].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
               <tbody>
                 {rows.map(u => {
                   const locked = u.lockedUntil && new Date(u.lockedUntil).getTime() > Date.now();

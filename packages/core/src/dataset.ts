@@ -13,7 +13,6 @@ export const SERVICE_ALLOWANCE: Record<Brand, Record<Dock, number>> = {
   Tech:  { rear_dock: 43, street: 55, mall_bay: 55 },
 };
 
-
 export const TRAVEL_ROWS: Record<string, { outMin: number; interMin: number; outKm: number; interKm: number; roadClass: string }> = {
   'Peliyagoda|Colombo': { outMin: 24, interMin: 8, outKm: 12, interKm: 4.0, roadClass: 'urban' },
   'Peliyagoda|Gampaha': { outMin: 37, interMin: 9, outKm: 28, interKm: 7.0, roadClass: 'suburban' },
@@ -28,7 +27,6 @@ export const TRAVEL_ROWS: Record<string, { outMin: number; interMin: number; out
   'Kandy|Badulla': { outMin: 186, interMin: 23, outKm: 130, interKm: 16.0, roadClass: 'hill' },
   'Kandy|Kegalle': { outMin: 53, interMin: 13, outKm: 40, interKm: 10.0, roadClass: 'suburban' },
 };
-
 
 export const VEHICLE_ROWS: [string, VehicleType, VehicleTemp, number, number, number, number, Depot][] = [
   ['VEH001', 'truck', 'reefer', 5510, 26.4, 4.7, 340, 'Peliyagoda'],

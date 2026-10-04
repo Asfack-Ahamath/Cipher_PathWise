@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, ClipboardList, KanbanSquare, CalendarClock, MapPin, AlertTriangle, BarChart3, Route as RouteIcon, PanelLeftClose, PanelLeftOpen, LogOut, Bell, Clock, X, ChevronRight, RotateCcw, Menu, FlaskConical, Settings2, KeyRound } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Modal, Segmented, Field, inputCls, cx } from '../../components/ds';
-import { useAct, useApi, useToast } from '../../components/common';
+import { useAct, useApi, useToast, LiveDot } from '../../components/common';
 import { post, put } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { SignOutDialog } from '../../components/FieldShell';
@@ -17,7 +17,6 @@ import Exceptions from './Exceptions';
 import Forecast from './Forecast';
 import PeakDay from './PeakDay';
 import { useLiveUpdates } from '../../lib/live';
-import { LiveDot } from '../../components/common';
 
 export type DepotFilter = 'all' | 'Peliyagoda' | 'Kandy';
 const DepotCtx = createContext<DepotFilter>('all');
@@ -34,7 +33,7 @@ export default function DispatcherApp() {
       <div className="h-[100dvh] flex bg-[#F4F6FA] overflow-hidden">
         <Sidebar mobileOpen={mobileNav} onClose={() => setMobileNav(false)} />
         <div className="relative flex-1 min-w-0 flex flex-col">
-          <TopNav depot={depot} setDepot={setDepot} onMenu={() => setMobileNav(true)} live={live} clockOpen={clockOpen} setClockOpen={setClockOpen} />
+          <TopNav depot={depot} setDepot={setDepot} onMenu={() => setMobileNav(true)} live={live} setClockOpen={setClockOpen} />
           <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <Routes>
               <Route index element={<Overview />} />
@@ -145,7 +144,7 @@ function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => 
   );
 }
 
-function TopNav({ depot, setDepot, onMenu, live, clockOpen, setClockOpen }: { depot: DepotFilter; setDepot: (d: DepotFilter) => void; onMenu: () => void; live: 'connecting' | 'live' | 'offline'; clockOpen: boolean; setClockOpen: (v: boolean) => void }) {
+function TopNav({ depot, setDepot, onMenu, live, setClockOpen }: { depot: DepotFilter; setDepot: (d: DepotFilter) => void; onMenu: () => void; live: 'connecting' | 'live' | 'offline'; setClockOpen: (v: boolean) => void }) {
   const nav = useNavigate();
   const now = useNow(15_000);
   const [open, setOpen] = useState(false);

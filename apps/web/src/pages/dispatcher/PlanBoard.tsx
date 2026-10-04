@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { KanbanSquare, ChevronDown, Package, AlertTriangle, XCircle, Snowflake, Search, Truck, Wand2, RotateCcw, X, CheckCircle2, Send, Clock, ShieldCheck, ListChecks, MoreVertical, History } from 'lucide-react';
 import CapacityBar from '../../components/CapacityBar';
 import { TempTag, OutletBadges, BRAND_COLOR } from '../../components/tags';
-import { Toolbar, Button, Callout, Segmented, Pill, Modal, Count, inputCls, Overline, IconChip, HUE, cx, Field } from '../../components/ds';
+import { Toolbar, Button, Callout, Segmented, Pill, PILL_TONE, Modal, Count, inputCls, Overline, IconChip, HUE, cx, Field } from '../../components/ds';
 import { ErrorState, Loading, Status, useAct, useApi, useReference, useToast, fmt } from '../../components/common';
-import { del, post, ApiError } from '../../lib/api';
+import { del, post } from '../../lib/api';
 import { dayLabel, hhmm } from '../../lib/clock';
 import { useDepot } from './DispatcherApp';
 
@@ -62,7 +62,7 @@ export default function PlanBoard() {
     },
   });
   const discard = useAct(() => del(`/plans/${date}/draft`), { invalidate: inv, success: 'Draft discarded' });
-  const publish = useAct(() => post(`/plans/${date}/publish`), { invalidate: inv, onDone: r => setPublished(r), onError: (e: ApiError) => { setConfirm(false); setShowVal(true); } });
+  const publish = useAct(() => post(`/plans/${date}/publish`), { invalidate: inv, onDone: r => setPublished(r), onError: () => { setConfirm(false); setShowVal(true); } });
 
   if (!date || q.isLoading) return <Loading />;
   if (q.error) return <ErrorState error={q.error} retry={q.refetch} />;
@@ -101,9 +101,9 @@ export default function PlanBoard() {
     const [vehicleId, trip] = val.split('|'); move.mutate({ orderIds, target: { vehicleId, trip: Number(trip) } });
   };
 
-  const statusPill = v.mode === 'live' ? <Pill label={`Published v${v.published.version} · ${hhmm(v.published.publishedAt)}`} color="#047857" bg="#D1FAE5" icon={<CheckCircle2 size={12} />} />
+  const statusPill = v.mode === 'live' ? <Pill label={`Published v${v.published.version} · ${hhmm(v.published.publishedAt)}`} {...PILL_TONE.success} icon={<CheckCircle2 size={12} />} />
     : v.mode === 'draft' ? <Pill label={`Draft v${v.draft.version} · ${v.draft.source === 'auto' ? 'auto-plan' : v.draft.source}`} color={v.draft.source === 'auto' ? '#115E59' : '#475569'} bg={v.draft.source === 'auto' ? '#CCFBF1' : '#F1F5F9'} icon={v.draft.source === 'auto' ? <Wand2 size={12} /> : undefined} />
-    : <Pill label="No plan yet" color="#475569" bg="#F1F5F9" />;
+    : <Pill label="No plan yet" {...PILL_TONE.neutral} />;
 
   const validation = (
     <>
@@ -226,7 +226,7 @@ export default function PlanBoard() {
                       {pv.fresh > 0 && <Gauge label="Fresh time" pct={pv.fresh / pv.freshBudget} text={`${pv.fresh}/${pv.freshBudget}`} hue="teal" />}
                       <Gauge label="Load" pct={maxLoad} text={`${Math.round(maxLoad * 100)}%`} hue="indigo" />
                     </span>
-                    {vErrs.length > 0 ? <Pill label={`${vErrs.length} issue${vErrs.length === 1 ? '' : 's'}`} color="#BE123C" bg="#FFE4E8" icon={<XCircle size={12} />} /> : <Pill label="All good" color="#047857" bg="#D1FAE5" icon={<CheckCircle2 size={12} />} />}
+                    {vErrs.length > 0 ? <Pill label={`${vErrs.length} issue${vErrs.length === 1 ? '' : 's'}`} color="#BE123C" bg="#FFE4E8" icon={<XCircle size={12} />} /> : <Pill label="All good" {...PILL_TONE.success} icon={<CheckCircle2 size={12} />} />}
                     <ChevronDown size={18} className={cx('text-slate-400 transition-transform', isOpen && 'rotate-180')} />
                   </button>
                   {isOpen && <div className="border-t border-[#EEF1F5]">

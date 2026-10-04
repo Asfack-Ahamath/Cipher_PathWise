@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ClipboardList, Search, Phone, Smartphone, AlertTriangle, Plus, Clock, Lock, X, Pencil, Ban } from 'lucide-react';
-import { Toolbar, Tabs, Segmented, Button, Callout, DetailPanel, Modal, Field, inputCls, KeyValues, Pill, Empty } from '../../components/ds';
+import { Toolbar, Tabs, Segmented, Button, Callout, DetailPanel, Modal, Field, inputCls, KeyValues, Pill, PILL_TONE, Empty } from '../../components/ds';
 import { STATUS } from '../../components/StatusChip';
 import { BrandTag, TempTag, OutletBadges } from '../../components/tags';
 import { DownloadButton, ErrorState, Loading, Status, useAct, useApi, useReference, fmt } from '../../components/common';
@@ -8,6 +8,9 @@ import { patch, post } from '../../lib/api';
 import { hhmm } from '../../lib/clock';
 import { CATEGORIES } from '../../lib/categories';
 import { useDepot } from './DispatcherApp';
+
+/** Most units one order line can hold (the API enforces the same limit). */
+const MAX_UNITS = 500;
 
 export default function Orders() {
   const depot = useDepot();
@@ -86,7 +89,7 @@ export default function Orders() {
                           <td className="px-4 py-3"><OutletBadges o={o} /></td>
                           <td className="px-4 py-3 text-[13px] whitespace-nowrap">{o.deferredYesterday ? <span className="inline-flex items-center gap-1 font-semibold text-red-700"><AlertTriangle size={13} />Skipped last run</span> : <span className="text-slate-600">{o.daysSinceServed} day{o.daysSinceServed === 1 ? '' : 's'} ago</span>}</td>
                           <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap"><span className="inline-flex items-center gap-1.5">{o.source === 'phone' ? <Phone size={13} className="text-slate-400" /> : <Smartphone size={13} className="text-slate-400" />}{o.source === 'phone' ? 'Phone' : 'App'} · {hhmm(o.submittedAt)}</span></td>
-                          <td className="px-4 py-3">{o.placement ? <Pill label={o.placement} color={STATUS.planned.color} bg={STATUS.planned.bg} /> : o.deferral ? <Pill label={`Deferred to ${o.deferral.toDate.slice(5)}`} color={STATUS.deferred.color} bg={STATUS.deferred.bg} /> : <Pill label="Not placed" color="#475569" bg="#F1F5F9" />}</td>
+                          <td className="px-4 py-3">{o.placement ? <Pill label={o.placement} color={STATUS.planned.color} bg={STATUS.planned.bg} /> : o.deferral ? <Pill label={`Deferred to ${o.deferral.toDate.slice(5)}`} color={STATUS.deferred.color} bg={STATUS.deferred.bg} /> : <Pill label="Not placed" {...PILL_TONE.neutral} />}</td>
                         </tr>
                       );
                     })}
@@ -195,7 +198,7 @@ function PhoneOrder({ onClose, outlets }: { onClose: () => void; outlets: any[] 
               {cats.map(c => (
                 <div key={c.k} className="flex items-center justify-between gap-3">
                   <span className="text-[13px] text-slate-700">{c.k}</span>
-                  <input type="number" min={0} max={500} className={`${inputCls} w-24 text-right`} value={units[c.k] ?? ''} placeholder="0" onChange={e => setUnits({ ...units, [c.k]: Math.max(0, Math.min(500, Number(e.target.value) || 0)) })} aria-label={`${c.k} units`} />
+                  <input type="number" min={0} max={MAX_UNITS} className={`${inputCls} w-24 text-right`} value={units[c.k] ?? ''} placeholder="0" onChange={e => setUnits({ ...units, [c.k]: Math.max(0, Math.min(MAX_UNITS, Number(e.target.value) || 0)) })} aria-label={`${c.k} units`} />
                 </div>
               ))}
             </div>
@@ -220,7 +223,7 @@ function EditOrder({ order, onClose }: { order: any; onClose: () => void }) {
         {cats.map(c => (
           <div key={c.k} className="flex items-center justify-between gap-3">
             <span className="text-[13px] text-slate-700">{c.k}</span>
-            <input type="number" min={0} max={500} className={`${inputCls} w-24 text-right`} value={units[c.k] ?? ''} placeholder="0" onChange={e => setUnits({ ...units, [c.k]: Math.max(0, Math.min(500, Number(e.target.value) || 0)) })} aria-label={`${c.k} units`} />
+            <input type="number" min={0} max={MAX_UNITS} className={`${inputCls} w-24 text-right`} value={units[c.k] ?? ''} placeholder="0" onChange={e => setUnits({ ...units, [c.k]: Math.max(0, Math.min(MAX_UNITS, Number(e.target.value) || 0)) })} aria-label={`${c.k} units`} />
           </div>
         ))}
       </div>

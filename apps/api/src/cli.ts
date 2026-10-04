@@ -4,7 +4,7 @@ import { pool, q } from './db.js';
 import { resetDay, seedConditions, seedIfEmpty } from './seed/seed.js';
 import { hashPassword, PasswordPolicy } from './auth.js';
 
-/* npm run db:migrate | db:seed | db:reset | db:conditions | admin:password <email> <new password> */
+/* npm run db:migrate | db:seed | db:reset-demo | db:conditions | admin:set-password <email> <new password> */
 const [cmd, ...args] = process.argv.slice(2);
 const usage = 'usage: cli.ts migrate | seed | reset | conditions | set-password <email> <password>';
 try {

@@ -28,7 +28,6 @@ const pick = (r: Record<string, string>, ...names: string[]) => { for (const n o
 const truthy = (v?: string) => !!v && /^(1|true|yes|y)$/i.test(v);
 const hhmm = (v?: string) => { if (!v) return v; const m = v.match(/(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : v; };
 export const readCsv = (dir: string, f: string) => { for (const sub of ['', 'General Data']) { const p = path.join(dir, sub, f); if (fs.existsSync(p)) return parseCsv(fs.readFileSync(p, 'utf8')); } return null; };
-const read = (dir: string, f: string) => readCsv(dir, f);
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
 export interface OutletRow { id: string; name: string; brand: Brand; district: string; depot: Depot; dock: Dock; parking: string; open: string; close: string; mallWindow: string | null; vanOnly: boolean; lat: number; lng: number }
@@ -37,7 +36,7 @@ export interface VehicleRow { id: string; type: 'truck' | 'van'; temp: 'reefer' 
 export function loadDatasets(dir: string, log: (m: string) => void = step) {
   const src: Record<string, string> = {};
   let outlets: OutletRow[];
-  const oc = read(dir, 'outlets.csv');
+  const oc = readCsv(dir, 'outlets.csv');
   if (oc) {
     src.outlets = 'outlets.csv';
     outlets = oc.map(r => {
@@ -59,7 +58,7 @@ export function loadDatasets(dir: string, log: (m: string) => void = step) {
     outlets = OUTLET_ROWS.map(o => { const [lat, lng] = outletPosition(o); return { ...o, mallWindow: o.mallWindow ?? null, vanOnly: o.parking === 'van_only', name: `Waypoint ${o.brand} ${o.district} · ${o.id}`, lat, lng }; });
   }
   let vehicles: VehicleRow[];
-  const vc = read(dir, 'vehicles.csv');
+  const vc = readCsv(dir, 'vehicles.csv');
   if (vc) {
     src.vehicles = 'vehicles.csv';
     vehicles = vc.map(r => {
@@ -79,7 +78,7 @@ export function loadDatasets(dir: string, log: (m: string) => void = step) {
     vehicles = VEHICLE_ROWS.map(([id, type, temp, weightCap, volumeCap, kmPerL, fuelQuotaL, depot]) => ({ id, type, temp, depot, weightCap, volumeCap, kmPerL, fuelQuotaL }));
   }
   let travel = Object.entries(TRAVEL_ROWS).map(([k, v]) => { const [depot, district] = k.split('|'); return { depot: depot as Depot, district, ...v }; });
-  const tc = read(dir, 'district_travel.csv');
+  const tc = readCsv(dir, 'district_travel.csv');
   if (tc) {
     src.travel = 'district_travel.csv';
     travel = tc.map(r => ({
@@ -89,7 +88,7 @@ export function loadDatasets(dir: string, log: (m: string) => void = step) {
     }));
   }
   let allowance = SERVICE_ALLOWANCE;
-  const ac = read(dir, 'service_allowance.csv');
+  const ac = readCsv(dir, 'service_allowance.csv');
   if (ac) {
     src.allowance = 'service_allowance.csv';
     const a: any = { Fresh: {}, Style: {}, Tech: {} };

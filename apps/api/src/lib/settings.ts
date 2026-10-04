@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { DEFAULT_RULES, type PlanningRules } from '@pathwise/core';
-import { one, q, type Db } from '../db.js';
+import { q, type Db } from '../db.js';
 
 /* Admin-editable settings, validated and cached. `rules` feed the planning engine;
    `operations` drive cut-off, offline detection, receipt timeout and sessions. */
@@ -46,7 +46,3 @@ export async function saveSettings(key: 'rules' | 'operations', value: unknown, 
   return parsed;
 }
 export const invalidateSettings = () => { cache = null; };
-export async function getSetting<T>(key: string, db?: Db): Promise<T | null> {
-  const r = await one<{ value: T }>(`SELECT value FROM settings WHERE key = $1`, [key], db);
-  return r?.value ?? null;
-}

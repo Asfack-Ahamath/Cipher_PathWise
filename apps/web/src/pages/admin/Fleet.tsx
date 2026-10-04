@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Search, Truck, Wrench } from 'lucide-react';
-import { Button, Card, Field, Modal, Segmented, cx, inputCls } from '../../components/ds';
+import { Button, Card, Field, Modal, Segmented, cx, inputCls, thCls } from '../../components/ds';
 import { ErrorState, Loading, fmt, useAct, useApi } from '../../components/common';
 import { patch } from '../../lib/api';
 import { AdminPage } from './AdminApp';
@@ -23,7 +23,7 @@ export default function Fleet() {
       <Card pad={false}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[940px] text-[13px]">
-            <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Vehicle', 'Depot', 'Type', 'Capacity', 'Fuel this week', 'Driver', 'Status', ''].map(h => <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10">{h}</th>)}</tr></thead>
+            <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['Vehicle', 'Depot', 'Type', 'Capacity', 'Fuel this week', 'Driver', 'Status', ''].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
             <tbody>
               {rows.map(v => {
                 const pct = Math.min(100, (v.fuelUsedL / v.fuelQuotaL) * 100);

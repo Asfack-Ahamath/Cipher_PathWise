@@ -1,7 +1,5 @@
 import { Snowflake, Package, Truck, Building2, Warehouse, ParkingMeter } from 'lucide-react';
 
-export type Brand = 'Fresh' | 'Style' | 'Tech';
-export type Dock = 'rear_dock' | 'street' | 'mall_bay';
 export const BRAND_COLOR: Record<string, string> = { Fresh: '#0F766E', Style: '#7C3AED', Tech: '#0369A1' };
 
 /* Domain tags. One shape for all of them: 20 px high, 6 px radius, 11 px semibold. */
@@ -29,13 +27,6 @@ export function OutletBadges({ o }: { o: { vanOnly?: boolean; mallWindow?: strin
       {o.vanOnly && <VanOnlyBadge />}
       {o.mallWindow && <MallBadge window={o.mallWindow} />}
       {o.dock && <DockBadge dock={o.dock} />}
-    </span>
-  );
-}
-export function VehicleTag({ v }: { v: { id: string; type?: string; temp?: string } }) {
-  return (
-    <span className={`${tag} bg-slate-900 text-white font-mono`}>
-      {v.temp === 'reefer' && <Snowflake size={10} className="text-sky-300" />}{v.id}
     </span>
   );
 }

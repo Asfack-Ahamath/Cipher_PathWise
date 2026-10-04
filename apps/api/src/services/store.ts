@@ -4,6 +4,7 @@ import { audit, notify } from '../audit.js';
 import { dayLabel, localDate, minutesOfDay, nowSync } from '../clock.js';
 import { one, pool, q, tx, type Db } from '../db.js';
 import { bad, conflict, forbidden, notFound } from '../errors.js';
+import { MS_PER_MINUTE } from '../lib/constants.js';
 import { getSettings } from '../lib/settings.js';
 import { saveAttachment } from '../lib/storage.js';
 import type { AuthUser } from '../auth.js';
@@ -19,6 +20,8 @@ export const CATEGORIES = {
   Style: { ambient: [{ k: 'Casualwear (cartons)', kg: 14, m3: 0.28 }, { k: 'Denim and trousers (cartons)', kg: 22, m3: 0.32 }, { k: 'Footwear (boxes)', kg: 16, m3: 0.36 }, { k: 'Hanging garments (rails)', kg: 9, m3: 0.45 }] },
   Tech: { ambient: [{ k: 'Double-door refrigerators', kg: 95, m3: 0.85 }, { k: '65" TVs', kg: 38, m3: 0.45 }, { k: 'Front-load washing machines', kg: 72, m3: 0.55 }, { k: 'Small appliances (cartons)', kg: 8, m3: 0.06 }] },
 } as const;
+type Category = { k: string; kg: number; m3: number };
+type CategoryTable = Record<string, Partial<Record<string, readonly Category[]>> | undefined>;
 
 const dayBefore = (d: string) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); };
 async function cutoffFor(delivery: string) {
@@ -40,7 +43,7 @@ export async function orderWindow() {
   const skipped = await q<any>(`SELECT to_char(date,'YYYY-MM-DD') AS date, holiday FROM calendar WHERE date > $1 AND date < $2 AND NOT is_operating ORDER BY date`, [base, delivery]);
   const cal = await one<any>(`SELECT is_payday AS "isPayday", holiday, festival_ramp AS "festivalRamp", monsoon FROM calendar WHERE date = $1`, [delivery]);
   const upcoming = await q<any>(`SELECT to_char(date,'YYYY-MM-DD') AS date, is_operating AS "isOperating", holiday FROM calendar WHERE date >= $1 ORDER BY date LIMIT 7`, [delivery]);
-  return { now: now.toISOString(), cutoffTime: operations.cutoffTime, deliveryDate: delivery, deliveryLabel: dayLabel(delivery), cutoffAt: cutoffAt.toISOString(), minutesLeft: Math.max(0, Math.round((cutoffAt.getTime() - now.getTime()) / 60000)), afterCutoff, skipped, calendar: cal, upcoming };
+  return { now: now.toISOString(), cutoffTime: operations.cutoffTime, deliveryDate: delivery, deliveryLabel: dayLabel(delivery), cutoffAt: cutoffAt.toISOString(), minutesLeft: Math.max(0, Math.round((cutoffAt.getTime() - now.getTime()) / MS_PER_MINUTE)), afterCutoff, skipped, calendar: cal, upcoming };
 }
 
 const Line = z.object({ category: z.string().min(1).max(60), units: z.number().int().min(0).max(500) });
@@ -52,7 +55,7 @@ export const OrderBody = z.object({
 export const OrderEditBody = z.object({ lines: z.array(Line).min(1).max(20), note: z.string().trim().max(300).optional() });
 
 function sizeLines(brand: string, temp: string, lines: z.infer<typeof Line>[]) {
-  const cats = (CATEGORIES as any)[brand]?.[temp] as { k: string; kg: number; m3: number }[] | undefined;
+  const cats = (CATEGORIES as CategoryTable)[brand]?.[temp];
   if (!cats) throw bad(temp === 'chilled' ? 'Only Fresh outlets order chilled goods.' : 'This outlet cannot order these goods.');
   let units = 0, kg = 0, m3 = 0;
   const seen = new Set<string>();
@@ -142,7 +145,7 @@ export async function storeOverview(outletId: string) {
     const presence = await one<any>(`SELECT last_seen FROM vehicle_presence WHERE vehicle_id = $1`, [trip.vehicle_id]);
     const delivered = await one<any>(`SELECT e.device_time, e.received_at, e.payload, p.receiver, p.delivered_units FROM stop_events e LEFT JOIN pods p ON p.event_id = e.id WHERE e.trip_id = $1 AND e.outlet_id = $2 AND e.type = 'delivered' ORDER BY e.device_time DESC LIMIT 1`, [trip.id, outletId]);
     const lastSeen = presence?.last_seen ? new Date(presence.last_seen) : null;
-    const offline = trip.status === 'in_progress' && (!lastSeen || now.getTime() - lastSeen.getTime() > operations.offlineAfterMin * 60000);
+    const offline = trip.status === 'in_progress' && (!lastSeen || now.getTime() - lastSeen.getTime() > operations.offlineAfterMin * MS_PER_MINUTE);
     const lines = await q<any>(`SELECT o.id, o.temp FROM trip_orders tor JOIN orders o ON o.id = tor.order_id WHERE tor.trip_id = $1 AND o.outlet_id = $2 AND tor.moved_at IS NULL AND tor.load_status <> 'removed'`, [trip.id, outletId]);
     deliveries.push({
       tripId: trip.id, vehicleId: trip.vehicle_id, trip: trip.trip_no, tripStatus: trip.status, stop: stop.seq, stops: eta.stops.length, orderIds: lines.map(l => l.id), temps: [...new Set(lines.map(l => l.temp))],
@@ -169,7 +172,7 @@ export async function storeOverview(outletId: string) {
     toConfirm, receiptConfirmHours: operations.receiptConfirmHours,
     upcoming: await Promise.all(upcoming.map(async o => ({ ...o, dateLabel: dayLabel(o.date), editable: now < await cutoffFor(o.date) }))),
     window,
-    categories: (CATEGORIES as any)[ot.brand],
+    categories: (CATEGORIES as CategoryTable)[ot.brand],
   };
 }
 
