@@ -86,8 +86,8 @@ Result on the seeded day (asserted in the tests):
 | | |
 |---|---|
 | Orders | 143 |
-| Served | 135 on 36–37 trips, 0 rule breaks |
-| Deferred | 8 chilled Fresh orders (Kurunegala / Puttalam area), reason `no_reefer_capacity`, kind *chosen* |
+| Served | 135 on 39 trips (38 vehicles), 0 rule breaks |
+| Deferred | 8 chilled Fresh orders (mostly Kurunegala and Puttalam), reason `no_reefer_capacity`, kind *chosen* |
 | Skipped yesterday | OUT116, OUT030, OUT079 all served |
 | Story trip | Kegalle goes on VEH041 (the smallest reefer that fits), Kandy depot |
 

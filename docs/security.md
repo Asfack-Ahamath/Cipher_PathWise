@@ -36,7 +36,7 @@ The web app's route guards only mirror this — the API is the authority.
 
 ## Data protection
 
-- **Row-level security** is on for every table (`003_security.sql`). On Supabase, `anon` has no access and signed-in
+- **Row-level security** is on for all 26 application tables (`003_security.sql`). On Supabase, `anon` has no access and signed-in
   Supabase users can only read their own rows; nobody can write through the Data API. The browser never receives a
   Supabase key.
 - **Files**: photos and signatures are checked on upload (JPEG/PNG/WebP by magic number, ≤ 5 MB) and served only through
@@ -59,4 +59,4 @@ The web app's route guards only mirror this — the API is the authority.
 | Database password (in `DATABASE_URL`) | host environment | in git |
 | `ADMIN_PASSWORD` | host environment, first start only | reused elsewhere |
 
-The competition datasets are confidential: the repository must stay private (see `data/README.md`).
+The raw competition files are never committed: every CSV, ZIP and spreadsheet under `data/` is git-ignored (see `data/README.md`).
