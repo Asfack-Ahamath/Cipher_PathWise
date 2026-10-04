@@ -3,6 +3,7 @@ import { audit, notify } from '../audit.js';
 import { dayLabel, nowSync } from '../clock.js';
 import { one, pool, q, tx, type Db } from '../db.js';
 import { bad, conflict, notFound } from '../errors.js';
+import { MS_PER_MINUTE } from '../lib/constants.js';
 import { z } from 'zod';
 import { loadNetwork, nextOperatingDay, ordersForDate } from './network.js';
 import { liveEta } from './live.js';
@@ -258,7 +259,7 @@ async function simulateMove(c: Db, net: Network, date: string, fromTripId: numbe
     const pt = plan.find(p => p.trip === target.trip)!;
     pt.orderIds = sequenceOrders(net, [...pt.orderIds, ...ids], orders);
   } else {
-    const nowMin = Math.round((at.getTime() - new Date(date + 'T00:00:00+05:30').getTime()) / 60000);
+    const nowMin = Math.round((at.getTime() - new Date(date + 'T00:00:00+05:30').getTime()) / MS_PER_MINUTE);
     const dep = Math.max(departureFor(net, plan, [outletId], orders), Math.ceil((nowMin + 10) / 5) * 5);
     newTrip = { vehicleId: to.vehicleId, trip: (plan.reduce((m, p) => Math.max(m, p.trip), 0)) + 1, depart: toHHMM(dep), orderIds: sequenceOrders(net, ids, orders) };
     plan.push(newTrip);
@@ -285,7 +286,7 @@ export async function moveOptions(date: string, fromTripId: number, outletId: st
   const eta = await liveEta(net, from, at);
   const cur = eta.stops.find(x => x.outletId === outletId);
   const presence = await one<any>(`SELECT last_seen FROM vehicle_presence WHERE vehicle_id = $1`, [from.vehicle_id]);
-  const quietMin = presence ? Math.round((at.getTime() - new Date(presence.last_seen).getTime()) / 60000) : null;
+  const quietMin = presence ? Math.round((at.getTime() - new Date(presence.last_seen).getTime()) / MS_PER_MINUTE) : null;
   const keep = {
     vehicleId: from.vehicle_id, trip: from.trip_no, keep: true, eta: cur?.expectedArriveHHMM ?? null, planned: cur?.plannedHHMM ?? null, closeAt: cur?.closeHHMM ?? ot.close,
     delivered: !!cur?.done, late: !!cur?.late, lateRisk: !!cur?.lateRisk, hold: eta.hold, lastSeenMinAgo: quietMin,
@@ -333,7 +334,7 @@ export async function moveStopLive(date: string, userId: number, fromTripId: num
     for (const [i, id] of sim.tp.orderIds.entries()) await c.query(`INSERT INTO trip_orders (trip_id, order_id, seq) VALUES ($1,$2,$3) ON CONFLICT (trip_id, order_id) DO UPDATE SET seq = EXCLUDED.seq, moved_at = NULL, load_status = CASE WHEN trip_orders.load_status = 'removed' THEN 'pending' ELSE trip_orders.load_status END`, [targetId, id, i + 1]);
     for (const id of ids) await c.query(`INSERT INTO stop_moves (order_id, outlet_id, from_trip_id, to_trip_id, moved_at, moved_by, reason) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, outletId, fromTripId, targetId, at, userId, reason]);
     await c.query(`UPDATE trips SET changed_at = $2, change_note = $3 WHERE id = ANY($1)`, [[fromTripId, targetId], at, JSON.stringify({ moved: outletId, from: from.vehicle_id, to: to.vehicleId })]);
-    const hhmm = toHHMM((at.getTime() - new Date(date + 'T00:00:00+05:30').getTime()) / 60000);
+    const hhmm = toHHMM((at.getTime() - new Date(date + 'T00:00:00+05:30').getTime()) / MS_PER_MINUTE);
     await notify(c, `vehicle:${from.vehicle_id}`, 'stop_moved', `${outletId} moved to ${to.vehicleId}`, `The dispatcher moved this stop at ${hhmm}. ${reason}`, { tone: 'amber', link: '/r' });
     await notify(c, `vehicle:${to.vehicleId}`, 'stop_added', `${outletId} added to your Trip ${sim.tp.trip}`, `${reason} Estimated arrival ${sim.eta}.`, { tone: 'amber', link: '/r' });
     await notify(c, `outlet:${outletId}`, 'eta', `Your delivery now comes on ${to.vehicleId}`, `Estimated arrival ${sim.eta}, inside your window.`, { tone: 'blue', link: '/s/track' });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { WifiOff, Wifi, CheckCircle2, Clock, Package, Camera, AlertTriangle, RefreshCw, Snowflake, Navigation, PenLine, Lock, Truck, Hourglass, CircleSlash, DoorClosed, Ban, ShieldAlert, MapPin, ChevronRight, ArrowRightLeft, Flag, CloudUpload, X, Phone, Construction, Minus, Plus } from 'lucide-react';
 import { FieldHeader, BigButton } from '../../components/FieldShell';
@@ -81,7 +81,6 @@ export default function DriverApp() {
   const started = ['in_progress', 'completed'].includes(trip.status) || !!pendingFor('trip_started');
   const closed = trip.status === 'completed' || !!pendingFor('trip_closed');
   const released = ['released', 'in_progress', 'completed'].includes(trip.status);
-  const movedOutlets = new Map<string, any>(trip.movedAway.map((m: any) => [m.outletId, m]));
   const stopState = (s: any): 'synced' | 'saved' | 'arrived' | 'todo' => s.outcome ? 'synced' : pendingFor('delivered', s.outletId) ? 'saved' : (s.arrivedAt || pendingFor('arrived', s.outletId)) ? 'arrived' : 'todo';
   const stops: any[] = trip.stops;
   const allStops = [...stops, ...trip.movedAway.filter((m: any, i: number, a: any[]) => a.findIndex(x => x.outletId === m.outletId) === i).map((m: any) => ({ outletId: m.outletId, moved: m, seq: '–', lines: [] }))];

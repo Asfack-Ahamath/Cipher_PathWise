@@ -4,10 +4,10 @@ import { jwtVerify, SignJWT } from 'jose';
 import { z } from 'zod';
 import type { Role } from '@pathwise/core';
 import { audit } from './audit.js';
-import { nowSync } from './clock.js';
 import { config } from './config.js';
 import { one, pool, q } from './db.js';
 import { bad, forbidden, HttpError, locked, unauthorized } from './errors.js';
+import { BCRYPT_COST, MS_PER_MINUTE } from './lib/constants.js';
 import { getSettings } from './lib/settings.js';
 import { sbPasswordLogin, sbRecoverPassword, sbSendRecovery, sbUpdateUser, SupabaseError } from './lib/supabase.js';
 
@@ -33,9 +33,15 @@ export const PasswordPolicy = z.string().min(10, 'Use at least 10 characters.').
   .regex(/[A-Za-z]/, 'Include at least one letter.').regex(/\d/, 'Include at least one number.');
 
 const USER_COLS = `id, email, name, role, depot, outlet_id, vehicle_id, is_active, must_change_password, token_version, password_hash, pin_hash, auth_user_id, failed_logins, locked_until`;
-const toAuth = (u: any): AuthUser => ({ id: u.id, email: u.email, name: u.name, role: u.role, depot: u.depot, outletId: u.outlet_id, vehicleId: u.vehicle_id, mustChangePassword: u.must_change_password });
+/** A row of `users` as selected by USER_COLS. */
+interface UserRow {
+  id: number; email: string; name: string; role: Role; depot: string | null; outlet_id: string | null; vehicle_id: string | null;
+  is_active: boolean; must_change_password: boolean; token_version: number; password_hash: string | null; pin_hash: string | null;
+  auth_user_id: string | null; failed_logins: number; locked_until: Date | null;
+}
+const toAuth = (u: UserRow): AuthUser => ({ id: u.id, email: u.email, name: u.name, role: u.role, depot: u.depot, outletId: u.outlet_id, vehicleId: u.vehicle_id, mustChangePassword: u.must_change_password });
 
-async function issue(u: any) {
+async function issue(u: UserRow) {
   const { operations } = await getSettings();
   const hours = u.role === 'driver' ? operations.driverSessionHours : operations.sessionHours;
   const token = await new SignJWT({ role: u.role, tv: u.token_version }).setProtectedHeader({ alg: 'HS256' }).setSubject(String(u.id))
@@ -43,27 +49,27 @@ async function issue(u: any) {
   return { token, user: toAuth(u), expiresInHours: hours };
 }
 
-async function recordFailure(u: any, ip: string) {
+async function recordFailure(u: UserRow, ip: string) {
   const fails = (u.failed_logins ?? 0) + 1;
-  const lockUntil = fails >= MAX_FAILS ? new Date(Date.now() + LOCK_MIN * 60000) : null;
+  const lockUntil = fails >= MAX_FAILS ? new Date(Date.now() + LOCK_MIN * MS_PER_MINUTE) : null;
   await q(`UPDATE users SET failed_logins = $2, locked_until = coalesce($3, locked_until) WHERE id = $1`, [u.id, lockUntil ? 0 : fails, lockUntil]);
   await audit(pool, u.id, lockUntil ? 'auth.locked' : 'auth.login_failed', `user:${u.id}`, { ip });
 }
-function assertUsable(u: any) {
+function assertUsable(u: UserRow) {
   if (!u.is_active) throw forbidden('This account is disabled. Ask an administrator.');
   if (u.locked_until && new Date(u.locked_until).getTime() > Date.now()) {
-    const min = Math.ceil((new Date(u.locked_until).getTime() - Date.now()) / 60000);
+    const min = Math.ceil((new Date(u.locked_until).getTime() - Date.now()) / MS_PER_MINUTE);
     throw locked(`Too many wrong passwords. Try again in ${min} minute${min === 1 ? '' : 's'}.`);
   }
 }
-async function succeed(u: any, ip: string, how: string) {
+async function succeed(u: UserRow, ip: string, how: string) {
   await q(`UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = now() WHERE id = $1`, [u.id]);
   await audit(pool, u.id, 'auth.login', `user:${u.id}`, { ip, how });
   return issue(u);
 }
 
 export async function login(email: string, password: string, ip = '') {
-  const u = await one<any>(`SELECT ${USER_COLS} FROM users WHERE lower(email) = lower($1)`, [email.trim()]);
+  const u = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE lower(email) = lower($1)`, [email.trim()]);
   if (!u) { await bcrypt.compare(password, DUMMY_HASH); return null; }
   assertUsable(u);
   let ok = false;
@@ -79,19 +85,19 @@ export async function login(email: string, password: string, ip = '') {
 /** Shared dock tablets: a loader signs in with a 4-digit PIN for their depot. */
 export async function loginWithPin(pin: string, depot: string | undefined, ip = '') {
   if (!/^\d{4,6}$/.test(pin)) return null;
-  const loaders = await q<any>(`SELECT ${USER_COLS} FROM users WHERE role = 'loader' AND pin_hash IS NOT NULL AND is_active ${depot ? 'AND depot = $1' : ''}`, depot ? [depot] : []);
-  for (const u of loaders) if (await bcrypt.compare(pin, u.pin_hash)) { assertUsable(u); return succeed(u, ip, 'pin'); }
+  const loaders = await q<UserRow>(`SELECT ${USER_COLS} FROM users WHERE role = 'loader' AND pin_hash IS NOT NULL AND is_active ${depot ? 'AND depot = $1' : ''}`, depot ? [depot] : []);
+  for (const u of loaders) if (await bcrypt.compare(pin, u.pin_hash!)) { assertUsable(u); return succeed(u, ip, 'pin'); }
   await audit(pool, null, 'auth.pin_failed', depot ? `depot:${depot}` : null, { ip });
   return null;
 }
 
 /* ── per-request ── */
-const cache = new Map<number, { u: any; at: number }>();
+const cache = new Map<number, { u: UserRow | null; at: number }>();
 export const forgetUser = (id: number) => cache.delete(id);
 async function loadUser(id: number) {
   const hit = cache.get(id);
   if (hit && Date.now() - hit.at < 20_000) return hit.u;
-  const u = await one<any>(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [id]);
+  const u = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [id]);
   cache.set(id, { u, at: Date.now() });
   return u;
 }
@@ -123,13 +129,13 @@ export const requireRole = (...roles: Role[]) => async (req: FastifyRequest, rep
 };
 
 /* ── password management ── */
-export async function hashPassword(pw: string) { return bcrypt.hash(pw, 12); }
+export async function hashPassword(pw: string) { return bcrypt.hash(pw, BCRYPT_COST); }
 
 export async function changeOwnPassword(userId: number, current: string, next: string, ip = '') {
   const parsed = PasswordPolicy.safeParse(next);
   if (!parsed.success) throw bad(parsed.error.issues[0].message);
   if (current === next) throw bad('The new password must be different.');
-  const u = await one<any>(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [userId]);
+  const u = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [userId]);
   if (!u) throw unauthorized();
   if (config.authProvider === 'supabase' && u.auth_user_id) {
     const sb = await sbPasswordLogin(u.email, current);
@@ -142,8 +148,8 @@ export async function changeOwnPassword(userId: number, current: string, next: s
   }
   forgetUser(userId);
   await audit(pool, userId, 'user.password_changed', `user:${userId}`, { ip });
-  const fresh = await one<any>(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [userId]);
-  return issue(fresh);
+  const fresh = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [userId]);
+  return issue(fresh!);
 }
 
 export async function signOutEverywhere(userId: number) {
@@ -189,12 +195,12 @@ export async function completeRecovery(accessToken: string, password: string, ip
   let sb;
   try { sb = await sbRecoverPassword(accessToken, password); }
   catch (e) { if (e instanceof SupabaseError) throw bad(e.status >= 500 ? 'Sign-in service is not reachable. Try again in a minute.' : 'The reset link is invalid or has expired. Ask for a new one.'); throw e; }
-  const u = await one<any>(`SELECT ${USER_COLS} FROM users WHERE auth_user_id = $1`, [sb.id]);
+  const u = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE auth_user_id = $1`, [sb.id]);
   if (!u) throw bad('This account is not set up in PathWise. Ask an administrator.');
   assertUsable({ ...u, locked_until: null });
   await q(`UPDATE users SET must_change_password = false, failed_logins = 0, locked_until = NULL, token_version = token_version + 1 WHERE id = $1`, [u.id]);
   forgetUser(u.id);
   await audit(pool, u.id, 'user.password_recovered', `user:${u.id}`, { ip });
-  const fresh = await one<any>(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [u.id]);
-  return succeed(fresh, ip, 'recovery');
+  const fresh = await one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [u.id]);
+  return succeed(fresh!, ip, 'recovery');
 }

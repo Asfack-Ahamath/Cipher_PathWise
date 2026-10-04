@@ -41,7 +41,7 @@ export function autoPlan(net: Network, orderList: Order[]): PlanResult {
   const states = new Map<string, VState>();
   for (const v of net.vehicles.values()) states.set(v.id, { v, trips: [], fresh: 0, styleTech: 0, fuel: v.fuelUsedL });
 
-  const departFor = (vs: VState, _brand: Brand, outletIds: string[]): number => departureFor(net, vs.trips, outletIds, orders);
+  const departFor = (vs: VState, outletIds: string[]): number => departureFor(net, vs.trips, outletIds, orders);
 
   /* would this set of orders be a valid trip for this vehicle, given its other trips? */
   type Why = 'ok' | 'volume' | 'weight' | 'window' | 'budget' | 'fuel' | 'trips' | 'compat';
@@ -54,7 +54,7 @@ export function autoPlan(net: Network, orderList: Order[]): PlanResult {
     const outletIds = [...new Set(seq.map(id => orders.get(id)!.outletId))];
     const brand = net.outlets.get(outletIds[0])!.brand;
     const earlier = replacing ? others.filter(t => toMin(t.depart) < toMin(replacing.depart)) : others;
-    const depart = departFor({ ...vs, trips: earlier }, brand, outletIds);
+    const depart = departFor({ ...vs, trips: earlier }, outletIds);
     const trip: PlanTrip = { vehicleId: vs.v.id, trip: replacing?.trip ?? others.length + 1, depart: toHHMM(depart), orderIds: seq };
     const s = scheduleTrip(net, trip, orders);
     if (s.m3 > vs.v.volumeCap + 1e-9) return { why: 'volume' };
@@ -151,7 +151,7 @@ export function autoPlan(net: Network, orderList: Order[]): PlanResult {
   }
   trips.sort((a, b) => a.vehicleId.localeCompare(b.vehicleId) || a.trip - b.trip);
 
-  const deferrals = stillDeferred.map(o => explainDeferral(net, o, orders, states));
+  const deferrals = stillDeferred.map(o => explainDeferral(net, o, states));
   const chilled = orderList.filter(o => o.temp === 'chilled');
   const reeferTrips = trips.filter(t => net.vehicles.get(t.vehicleId)!.temp === 'reefer').length;
   return {
@@ -164,7 +164,7 @@ export function autoPlan(net: Network, orderList: Order[]): PlanResult {
     },
   };
 
-  function explainDeferral(net: Network, o: Order, orders: Map<string, Order>, states: Map<string, VState>): DeferralDecision {
+  function explainDeferral(net: Network, o: Order, states: Map<string, VState>): DeferralDecision {
     const ot = net.outlets.get(o.outletId)!;
     const n = needs(o);
     const kind = n.van ? (n.reefer ? 'refrigerated van' : 'van') : n.reefer ? 'refrigerated vehicle' : 'vehicle';

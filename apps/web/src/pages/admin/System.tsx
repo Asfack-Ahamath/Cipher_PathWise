@@ -1,10 +1,11 @@
+import type { ReactNode } from 'react';
 import { Activity, CheckCircle2, Cloud, Database, ShieldCheck, XCircle } from 'lucide-react';
 import { Card, CardHeader, IconChip, KeyValues } from '../../components/ds';
 import { ErrorState, Loading, useApi } from '../../components/common';
 import { dayLabel, hhmm } from '../../lib/clock';
 import { AdminPage } from './AdminApp';
 
-const Ok = ({ ok, children }: { ok: boolean; children: React.ReactNode }) => <span className={`inline-flex items-center gap-1 font-semibold ${ok ? 'text-emerald-700' : 'text-red-700'}`}>{ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}{children}</span>;
+const Ok = ({ ok, children }: { ok: boolean; children: ReactNode }) => <span className={`inline-flex items-center gap-1 font-semibold ${ok ? 'text-emerald-700' : 'text-red-700'}`}>{ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}{children}</span>;
 const dur = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : s < 86400 ? `${(s / 3600).toFixed(1)} h` : `${(s / 86400).toFixed(1)} days`);
 
 export default function System() {

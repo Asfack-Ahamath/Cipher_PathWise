@@ -7,7 +7,6 @@
 export interface WeekPoint { total: number; chilled: number; orders?: number }
 export type WeeklyHistory = Map<string, WeekPoint>; // key `${depot}|${brand}|${isoYear}-${ww}`
 
-const wk = (year: number, week: number) => `${year}-${String(week).padStart(2, '0')}`;
 const t = (key: string) => { const [y, w] = key.split('-').map(Number); return y * 100 + w; };
 
 export function forecastWeek(history: WeeklyHistory, depot: string, brand: string, isoYear: number, isoWeek: number): WeekPoint & { method: string } {
@@ -35,4 +34,3 @@ export function forecastWeek(history: WeeklyHistory, depot: string, brand: strin
 export function historyFromRows(rows: [string, number, number, number][]): WeeklyHistory {
   return new Map(rows.map(([k, total, chilled, orders]) => [k, { total, chilled, orders }]));
 }
-export { wk as isoWeekKey };

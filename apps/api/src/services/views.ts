@@ -2,6 +2,7 @@ import { allocationFromTrips, autoPlan, buildNetwork, checkAllocation, DEPOT_POS
 import { dayLabel, minutesOfDay, nowSync } from '../clock.js';
 import { one, q } from '../db.js';
 import type { AuthUser } from '../auth.js';
+import { MS_PER_MINUTE } from '../lib/constants.js';
 import { getSettings } from '../lib/settings.js';
 import { activePlanDate, loadNetwork, ORDER_COLS } from './network.js';
 import { planView } from './plans.js';
@@ -74,7 +75,7 @@ export async function tracking(date?: string) {
     const eta = await liveEta(net, t, now);
     const ev = await q<any>(`SELECT outlet_id AS "outletId", device_time AS "deviceTime", conflict, payload->>'outcome' AS outcome FROM stop_events WHERE trip_id = $1 AND type = 'delivered' ORDER BY device_time`, [t.id]);
     const lastSeen = t.lastSeen ? new Date(t.lastSeen) : null;
-    const offline = t.status === 'in_progress' && (!lastSeen || now.getTime() - lastSeen.getTime() > operations.offlineAfterMin * 60000);
+    const offline = t.status === 'in_progress' && (!lastSeen || now.getTime() - lastSeen.getTime() > operations.offlineAfterMin * MS_PER_MINUTE);
     const v = net.vehicles.get(t.vehicle_id)!;
     const ot = (id: string) => net.outlets.get(id)!;
     const next = eta.stops.find(s => !s.done);

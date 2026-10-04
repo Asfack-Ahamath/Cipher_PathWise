@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { CheckCircle2, Lock, Snowflake, Package, AlertTriangle, Flag, Truck, Wrench, RotateCcw, Hourglass, ChevronRight, Minus, Plus, ArrowDownToLine, Info, Scale, TabletSmartphone } from 'lucide-react';
+import { CheckCircle2, Lock, Snowflake, AlertTriangle, Flag, Truck, Wrench, RotateCcw, Hourglass, ChevronRight, Minus, Plus, ArrowDownToLine, Info, Scale, TabletSmartphone } from 'lucide-react';
 import { FieldHeader, BigButton } from '../../components/FieldShell';
 import { Callout, Modal, Field, inputCls, Segmented, cx } from '../../components/ds';
 import { ErrorState, Loading, Status, useAct, useApi, useToast, fmt } from '../../components/common';

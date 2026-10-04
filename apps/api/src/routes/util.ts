@@ -12,7 +12,6 @@ export const parse = <T extends z.ZodTypeAny>(schema: T, data: unknown): z.infer
 };
 export const DateParam = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.') });
 export const IdParam = z.object({ id: z.coerce.number().int().positive() });
-export const OrderIdParam = z.object({ orderId: z.string().trim().min(3).max(40) });
 export const params = (req: FastifyRequest) => req.params as Record<string, string>;
 
 export const guard = {
@@ -36,4 +35,3 @@ export async function assertTripAccess(user: AuthUser, tripId: number) {
 
 /** Loaders act for their own depot; a dispatcher at the dock acts for any. */
 export const scopeDepot = (u: AuthUser) => (u.role === 'loader' ? u.depot : null);
-export const clientIp = (req: FastifyRequest) => req.ip;

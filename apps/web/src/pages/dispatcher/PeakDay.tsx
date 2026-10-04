@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { CheckCircle2, FlaskConical, Info, Search, ShieldAlert, Snowflake, Timer, Truck } from 'lucide-react';
-import { Callout, Card, CardHeader, IconChip, Metric, Segmented, Toolbar, cx, inputCls } from '../../components/ds';
+import { Callout, Card, CardHeader, IconChip, Metric, Segmented, Toolbar, cx, inputCls, thCls } from '../../components/ds';
 import { DownloadButton, ErrorState, Loading, fmt, useApi } from '../../components/common';
 import { BrandTag, TempTag } from '../../components/tags';
 
@@ -37,7 +37,7 @@ export default function PeakDay() {
             <div className="p-4 sm:p-5"><CardHeader icon={<IconChip hue="teal" size={32}><Truck size={16} /></IconChip>} title="Trips" subtitle="Booklet trip time: outbound + inter-stop × (orders − 1) + service allowance per order" /></div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-[13px]">
-                <thead className="bg-[#F9FAFB] border-y border-[#E4E7EC]"><tr>{['Vehicle', 'Trip', 'Brand', 'District', 'Orders', 'kg', 'm³', 'Minutes', 'Budget'].map(h => <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10">{h}</th>)}</tr></thead>
+                <thead className="bg-[#F9FAFB] border-y border-[#E4E7EC]"><tr>{['Vehicle', 'Trip', 'Brand', 'District', 'Orders', 'kg', 'm³', 'Minutes', 'Budget'].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
                 <tbody>
                   {p.trips.map((t: any) => (
                     <tr key={`${t.vehicleId}-${t.trip}`} className="border-t border-[#EEF0F3]">
@@ -63,7 +63,7 @@ export default function PeakDay() {
             </div>
             <div className="overflow-x-auto max-h-[560px]">
               <table className="w-full min-w-[860px] text-[13px]">
-                <thead className="sticky top-0 bg-[#F9FAFB] border-y border-[#E4E7EC]"><tr>{['Order', 'Outlet', 'Brand', 'District', 'Temp', 'kg / m³', 'Decision', 'Vehicle · trip', 'Why'].map(h => <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10">{h}</th>)}</tr></thead>
+                <thead className="sticky top-0 bg-[#F9FAFB] border-y border-[#E4E7EC]"><tr>{['Order', 'Outlet', 'Brand', 'District', 'Temp', 'kg / m³', 'Decision', 'Vehicle · trip', 'Why'].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
                 <tbody>
                   {rows.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No orders match.</td></tr>}
                   {rows.map((a: any) => (

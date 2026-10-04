@@ -1,4 +1,4 @@
-import { useState, type ElementType } from 'react';
+import { useState, type ElementType, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Activity, Database, KeyRound, LogOut, Menu, ScrollText, Settings2, SlidersHorizontal, Store, Truck, Users as UsersIcon, X, ArrowLeftRight, Route as RouteIcon } from 'lucide-react';
 import { cx } from '../../components/ds';
@@ -84,7 +84,7 @@ export default function AdminApp() {
 }
 
 /** Page frame shared by the admin screens. */
-export function AdminPage({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: React.ReactNode; children: React.ReactNode }) {
+export function AdminPage({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-6">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-5">

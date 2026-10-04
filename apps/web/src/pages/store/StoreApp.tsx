@@ -1,14 +1,16 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { Home, ShoppingCart, CalendarClock, ClipboardCheck, History, Truck, CheckCircle2, Clock, WifiOff, Snowflake, Package, Minus, Plus, AlertTriangle, PartyPopper, Wallet, CloudRain, Camera, PenLine, Lock, Timer, Construction, Pencil, Ban, X, ImagePlus } from 'lucide-react';
+import { Home, ShoppingCart, CalendarClock, ClipboardCheck, History, CheckCircle2, WifiOff, Minus, Plus, PartyPopper, Wallet, CloudRain, Camera, PenLine, Lock, Timer, Construction, Pencil, Ban, X, ImagePlus } from 'lucide-react';
 import { FieldHeader, BigButton } from '../../components/FieldShell';
-import { Callout, Segmented, Modal, Field, inputCls, Empty, Pill, cx } from '../../components/ds';
+import { Callout, Segmented, Modal, Field, inputCls, Empty, Button, cx } from '../../components/ds';
 import { AuthImage, compressImage, ErrorState, Loading, Status, useAct, useApi, useToast, fmt } from '../../components/common';
 import { OutletBadges, TempTag } from '../../components/tags';
 import { del, patch, post } from '../../lib/api';
 import { useLiveUpdates } from '../../lib/live';
-import { Button } from '../../components/ds';
 import { hhmm, useNow } from '../../lib/clock';
+
+/** Most units one order line can hold (the API enforces the same limit). */
+const MAX_UNITS = 500;
 
 const TABS = [
   { to: '/s', label: 'Today', icon: Home, end: true },
@@ -86,7 +88,7 @@ function Today({ o }: { o: any }) {
   const overdue = o.toConfirm.filter((x: any) => x.overdue).length;
   return (
     <div className="p-4 sm:p-6 space-y-5">
-      {o.toConfirm.length > 0 && <Callout tone={overdue ? 'warning' : 'success'} title={overdue ? `${overdue} delivery${overdue > 1 ? ' is' : ' is'} waiting over ${o.receiptConfirmHours} h for your check` : `Delivered ${firstDelivered?.delivered?.at ?? ''} — please check what arrived`} action={<BigButton tone="store" className="!min-h-[44px] !text-[14px]" onClick={() => nav('/s/receipt')}>Confirm receipt</BigButton>}>Compare each line with the driver's proof. Report anything short, damaged or warm.</Callout>}
+      {o.toConfirm.length > 0 && <Callout tone={overdue ? 'warning' : 'success'} title={overdue ? `${overdue} delivery is waiting over ${o.receiptConfirmHours} h for your check` : `Delivered ${firstDelivered?.delivered?.at ?? ''} — please check what arrived`} action={<BigButton tone="store" className="!min-h-[44px] !text-[14px]" onClick={() => nav('/s/receipt')}>Confirm receipt</BigButton>}>Compare each line with the driver's proof. Report anything short, damaged or warm.</Callout>}
       {pendingNotices.length > 0 && <Callout tone="warning" title={`${pendingNotices.length} delivery change${pendingNotices.length > 1 ? 's' : ''} to read`} action={<button onClick={() => nav('/s/deferrals')} className="text-[13px] font-semibold underline">Read now</button>}>{pendingNotices[0].storeText}</Callout>}
       {o.deliveries.length === 0 && (
         <div className="rounded-2xl border border-[#E6E9F0] p-5" style={{ background: 'linear-gradient(135deg,#FFF7ED,#FFFBEB)' }}>
@@ -166,7 +168,7 @@ function EditOrder({ order, cats, onClose }: { order: any; cats: any[]; onClose:
         {cats.map(c => (
           <div key={c.k} className="flex items-center justify-between gap-3">
             <span className="text-[14px] text-slate-700">{c.k}</span>
-            <input type="number" min={0} max={500} inputMode="numeric" className={`${inputCls} w-24 text-right`} value={units[c.k] ?? ''} placeholder="0" onChange={e => setUnits({ ...units, [c.k]: Math.max(0, Math.min(500, Number(e.target.value) || 0)) })} aria-label={`${c.k} units`} />
+            <input type="number" min={0} max={MAX_UNITS} inputMode="numeric" className={`${inputCls} w-24 text-right`} value={units[c.k] ?? ''} placeholder="0" onChange={e => setUnits({ ...units, [c.k]: Math.max(0, Math.min(MAX_UNITS, Number(e.target.value) || 0)) })} aria-label={`${c.k} units`} />
           </div>
         ))}
       </div>
@@ -213,7 +215,7 @@ function Order({ o }: { o: any }) {
   const kg = list.reduce((a, c) => a + (units[c.k] ?? 0) * c.kg, 0);
   const m3 = list.reduce((a, c) => a + (units[c.k] ?? 0) * c.m3, 0);
   const place = useAct(() => post('/store/orders', { temp, lines: list.map(c => ({ category: c.k, units: units[c.k] ?? 0 })).filter(l => l.units > 0) }), { invalidate: ['store', 'store-history'], onDone: r => { setDone(r); setUnits({}); } });
-  const set = (k: string, v: number) => setUnits(u => ({ ...u, [k]: Math.max(0, Math.min(500, v)) }));
+  const set = (k: string, v: number) => setUnits(u => ({ ...u, [k]: Math.max(0, Math.min(MAX_UNITS, v)) }));
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-[640px]">
       <OrderWindowCard w={o.window} now={now} />

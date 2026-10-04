@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "outDir": "dist", "rootDir": "src", "module": "NodeNext", "moduleResolution": "NodeNext", "declaration": false, "types": ["node"] },
+  "compilerOptions": { "outDir": "dist", "rootDir": "src", "module": "NodeNext", "moduleResolution": "NodeNext", "declaration": false, "types": ["node"], "noUnusedLocals": true, "noUnusedParameters": true },
   "include": ["src"]
 }

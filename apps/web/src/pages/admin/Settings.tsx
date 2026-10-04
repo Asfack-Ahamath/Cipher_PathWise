@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Clock3, Save, SlidersHorizontal } from 'lucide-react';
 import { Button, Callout, Card, CardHeader, Field, IconChip, inputCls } from '../../components/ds';
 import { ErrorState, Loading, useAct, useApi } from '../../components/common';
@@ -38,7 +38,7 @@ export default function Settings() {
   );
 }
 
-function Group({ k, title, icon, defs, value, note }: { k: 'rules' | 'operations'; title: string; icon: React.ReactNode; defs: Def[]; value: any; note?: string }) {
+function Group({ k, title, icon, defs, value, note }: { k: 'rules' | 'operations'; title: string; icon: ReactNode; defs: Def[]; value: any; note?: string }) {
   const [f, setF] = useState<any>(value);
   useEffect(() => setF(value), [value]);
   const errors = Object.fromEntries(defs.map(d => {

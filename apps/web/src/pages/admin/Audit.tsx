@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { ScrollText } from 'lucide-react';
-import { Button, Card, Empty, cx, inputCls } from '../../components/ds';
+import { Button, Card, Empty, cx, inputCls, thCls } from '../../components/ds';
 import { ErrorState, Loading } from '../../components/common';
 import { api } from '../../lib/api';
 import { dayLabel } from '../../lib/clock';
@@ -34,7 +34,7 @@ export default function Audit() {
           {items.length === 0 ? <Empty icon={<ScrollText size={20} />} title="Nothing recorded for this filter" /> : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] text-[13px]">
-                <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['When', 'Who', 'Action', 'Entity', 'Details'].map(h => <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500 px-4 h-10">{h}</th>)}</tr></thead>
+                <thead className="bg-[#F9FAFB] border-b border-[#E4E7EC]"><tr>{['When', 'Who', 'Action', 'Entity', 'Details'].map(h => <th key={h} className={thCls}>{h}</th>)}</tr></thead>
                 <tbody>
                   {items.map((a: any) => (
                     <tr key={a.id} className="border-t border-[#EEF0F3] align-top">
